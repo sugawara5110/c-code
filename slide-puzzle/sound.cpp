@@ -11,8 +11,8 @@ void sound(int f){
 	static int br;//ブロック移動音ハンドル
 
 	if (f == 0){//初期処理
-		bt = LoadSoundMem("./ogg/botan.ogg");
-		br = LoadSoundMem("./ogg/mov.ogg");
+		bt = LoadSoundMem("./dat/ogg/botan.dat");
+		br = LoadSoundMem("./dat/ogg/mov.dat");
 		return;
 	}
 

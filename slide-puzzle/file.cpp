@@ -7,7 +7,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "DxLib.h"
 #include <string.h>
-#include <dirent.h>
 #include "struct_set.h"
 #include "drawing_img.h"
 #include "mouse.h"
@@ -15,37 +14,46 @@
 
 void file(alldata *p){   //画像ファイル選択関数
      
-    DIR *dir;
-    struct dirent *ds;          /* ディレクトリストリーム構造体 */
-    char f_name_tbl[256][25];   //画像ファイル名文字列格納
-	int stl;                   //画像ファイル名文字列長さ
-	int x,i,Color,frg,k; 
+	HANDLE hFile;
+	WIN32_FIND_DATA fd;
+	
+    char f_name_tbl[256][100];   //画像ファイル名文字列格納
+	int stl;                    //画像ファイル名文字列長さ
+	int x, i, frg, k;
 	int mv;                  //移動量変更用
 	
-     i=1;
-     Color = GetColor( 255 , 255 , 255 ) ;       
- 
-    dir=opendir(".\\");  //探索場所カレントデレクトリ
+	i = 3;
+	strcpy(f_name_tbl[1],"./dat/img/nekokin.dat");//最初のファイル名格納
+	strcpy(f_name_tbl[2], "./dat/img/z_cam_ewc.dat");//カメラ用のファイル名格納
+     
+	hFile = FindFirstFile("*.*", &fd);//探索場所カレントデレクトリ
 
-    for(ds = readdir(dir); ds != NULL; ds = readdir(dir)){
-        //使える画像はBMP,JPEG,PNG,DDS,ARGB,TGA の６種類です。
+    do{
+		//使える画像はBMP,JPEG,PNG,DDS,ARGB,TGA の６種類です。
 	   
 		//↓画像ファイル選別  
-		stl = strlen(ds->d_name) - 4;
-		if (!strcmp(ds->d_name + stl, ".mpg") || !strcmp(ds->d_name + stl, ".avi")){ strcpy(f_name_tbl[i++], ds->d_name); continue; }
+		if (strlen(fd.cFileName) > 100)continue;//文字の長さが100超えの場合スキップ
+		stl = strlen(fd.cFileName) - 4;
+		if (!strcmp(fd.cFileName + stl, ".mpg") || !strcmp(fd.cFileName + stl, ".avi") ||
+			!strcmp(fd.cFileName + stl, ".MPG") || !strcmp(fd.cFileName + stl, ".AVI")){
+			strcpy(f_name_tbl[i++], fd.cFileName); continue;
+		}
 
-		if (!strcmp(ds->d_name + stl, ".bmp") || !strcmp(ds->d_name + stl, ".png") || !strcmp(ds->d_name + stl, ".dds") ||
-			!strcmp(ds->d_name + stl, ".tga") || !strcmp(ds->d_name + stl, ".jpg")){
-			strcpy(f_name_tbl[i++], ds->d_name); continue;
+		if (!strcmp(fd.cFileName + stl, ".bmp") || !strcmp(fd.cFileName + stl, ".png") || !strcmp(fd.cFileName + stl, ".dds") ||
+			!strcmp(fd.cFileName + stl, ".tga") || !strcmp(fd.cFileName + stl, ".jpg") || !strcmp(fd.cFileName + stl, ".BMP") || 
+			!strcmp(fd.cFileName + stl, ".PNG") || !strcmp(fd.cFileName + stl, ".DDS") || !strcmp(fd.cFileName + stl, ".TGA") || 
+			!strcmp(fd.cFileName + stl, ".JPG")){
+			strcpy(f_name_tbl[i++], fd.cFileName); continue;
 		}
 	
-	    stl=strlen(ds->d_name)-5;
-	    if (!strcmp(ds->d_name + stl, ".jpeg") || !strcmp(ds->d_name + stl, ".argb")){ 
-		    strcpy(f_name_tbl[i++], ds->d_name); continue;
+		stl = strlen(fd.cFileName) - 5;
+		if (!strcmp(fd.cFileName + stl, ".jpeg") || !strcmp(fd.cFileName + stl, ".argb") ||
+			!strcmp(fd.cFileName + stl, ".JPEG") || !strcmp(fd.cFileName + stl, ".ARGB")){
+			strcpy(f_name_tbl[i++], fd.cFileName); continue;
 	    }
 	
-    }//for終わり
-    closedir(dir);
+	} while (FindNextFile(hFile, &fd) && i < 256);//次のファイルのアドレス
+	FindClose(hFile);                 //クローズ
     
     k=i-1;
     i=1;
@@ -55,12 +63,14 @@ void file(alldata *p){   //画像ファイル選択関数
 		mv = 10;//通常移動量に更新
 		strcpy(p->g_name , f_name_tbl[i]);//ファイル名格納
 		stl = strlen(p->g_name) - 4;
-		if (!strcmp(p->g_name + stl, ".mpg") || !strcmp(p->g_name + stl, ".avi") ||
-			!strcmp(p->g_name, "z_cam_ewc.bmp")){//動画時移動量更新
-			mv = 20;
+		p->mcf = 0;//選択ファイル判別初期化
+		if (!strcmp(p->g_name + stl, ".mpg") || !strcmp(p->g_name + stl, ".avi") || //動画選択時
+			!strcmp(p->g_name + stl, ".MPG") || !strcmp(p->g_name + stl, ".AVI")){
+			mv = 20; p->mcf = 1;
 		}
+		if (!strcmp(p->g_name, "./dat/img/z_cam_ewc.dat")){mv = 20; p->mcf = 2;}//カメラ選択時
 		PauseMovieToGraph(p->mof);       //動画再生停止
-		drawing_img(p, x, 0, 4);        //動画像描画関数(カメラ終了処理)
+		p->cap.release();               //カメラ終了処理
 		drawing_img(p, x, 0, 2);       //動画像描画関数
 		 if (ProcessMessage() == -1){ InitSoftImage(); DxLib_End(); exit(0); }//強制終了
 	 if(frg!=0){ 

@@ -16,13 +16,11 @@ int change(alldata *p){              //ブロック交換関数宣言
 	imxy *img = p->img;
 	int *sp = p->space;
 	int mv;       //移動量変更用
-	int stl;     //ファイル名文字数
 
 	mv = prs->move;//通常ブロック移動量に初期化
-	stl = strlen(p->g_name) - 4;
-	if (!strcmp(p->g_name + stl, ".mpg") || !strcmp(p->g_name + stl, ".avi") ||
-		!strcmp(p->g_name, "z_cam_ewc.bmp")){//動画ブロック時,移動量に更新
-		mv = prs->movem;                    //動画ブロック時移動量更新
+	
+	if (p->mcf == 1 || p->mcf == 2){//動画ブロック時,移動量に更新
+		mv = prs->movem;           //動画ブロック時移動量更新
 	}
 
 	while (ScreenFlip() == 0 && cnt<prs->count){

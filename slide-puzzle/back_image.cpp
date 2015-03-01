@@ -17,11 +17,11 @@ void back_image(int f){//f‘€ì—p
 	
 	if (f == 0){
         r = rand() % 5;
-		if (r == 0)hk = LoadGraph("./hk/hk0.jpg");//”wŒi‰æ‘œ“Ç‚İ‚İ
-		if (r == 1)hk = LoadGraph("./hk/hk1.jpg");
-		if (r == 2)hk = LoadGraph("./hk/hk2.jpg");
-		if (r == 3)hk = LoadGraph("./hk/hk3.jpg");
-		if (r == 4)hk = LoadGraph("./hk/hk4.jpg");
+		if (r == 0)hk = LoadGraph("./dat/hk/hk0.dat");//”wŒi‰æ‘œ“Ç‚İ‚İ
+		if (r == 1)hk = LoadGraph("./dat/hk/hk1.dat");
+		if (r == 2)hk = LoadGraph("./dat/hk/hk2.dat");
+		if (r == 3)hk = LoadGraph("./dat/hk/hk3.dat");
+		if (r == 4)hk = LoadGraph("./dat/hk/hk4.dat");
 
 		return ;
 	}

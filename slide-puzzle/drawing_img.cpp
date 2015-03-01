@@ -12,20 +12,50 @@
 #include "struct_set.h"
 #include "back_image.h"
 #include "pic_resize.h"
-#include "ewclib.h"//カメラ用ライブラリ
+#include <process.h>
+#include "face_detect.h"
+
+int face_detect_after(alldata *p, int g2){    //検出処理後の描画処理関数
+
+	cv::Mat dte;
+	p->lock = 1;                                //検索スレッドからのデータ操作ロック
+	if (p->lock_t == 1){p->lock = 0; return 0;}//検索スレッドロックの場合, ロック解除後return 0
+	dte = p->mt_temp.clone();                 //本スレデータ引き渡し.clone()完全コピー
+	p->lock = 0;                             //ロック解除
+	
+	int x, y, i, j;
+
+		//p->dte.data[]の要素毎にデータが入ってる要素のみソフトイメージg2に拡大描画
+		for (y = 0; y < dte.rows; y++){
+			for (x = 0; x < dte.cols; x++){
+				if (dte.data[y * dte.step + x * dte.channels() + 2] > 0 ||
+					dte.data[y * dte.step + x * dte.channels() + 1] > 0 ||
+					dte.data[y * dte.step + x * dte.channels() + 0] > 0)
+				{
+					for (j = y * 2; j < y * 2 + 2; j++){
+						for (i = x * 2; i < x * 2 + 2; i++){
+							DrawPixelSoftImage(g2, i, j, dte.data[y * dte.step + x * dte.channels() + 2],
+								dte.data[y * dte.step + x * dte.channels() + 1],
+								dte.data[y * dte.step + x * dte.channels() + 0], 0);
+						}
+					}
+				}
+			}
+		}
+		return g2;
+}
 
 void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, f 0:静止画更新無, 1:静止画更新有, 2,3,4:ファイル関数用(動画は常に更新)
 	
-	int i, j, k, i1, j1;    //for
-	int rd, rd1, rd2, rd3; //ランダム
-	int r, g, b;          //色
-	int g2;              //動画像ハンドル
-	int stl;            //画像ファイル名文字列長さ
-	int **pi16;        //エッジ,エンボス処理一時保管用
-	int mf = 0;       //静止画,動画判別  0:静止画,1:動画
-	int camf = 0;          //カメラファイル選択 0:選択してない 1:選択している
-	static int xs, ys;    //動画描画前処理用の画像サイズ
-	static int buffer[320 * 240];//カメラ画像用バッファ(1要素に色情報が入ってる)
+	int i, j, k, i1, j1;            //for
+	int r, g, b;                   //色
+	int g2;                       //動画像ハンドル
+	const BASEIMAGE *MovieImage; //基本イメージデータ構造体(動画データで使用)
+	BYTE *Image;                //基本イメージデータ構造体(動画データで使用)
+	int **pi16;                //エッジ,エンボス処理一時保管用
+	int mf = 0;               //静止画,動画判別  0:静止画,1:動画
+	int camf = 0;            //カメラファイル選択 0:選択してない 1:選択している
+	static int xs, ys;      //動画描画前処理用の画像サイズ
 	int mono;         //モノクロ用
 	int pi;          //エッジ検出用
 	double ghs, gvs;//エッジ検出用
@@ -38,17 +68,23 @@ void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, 
 	int xx, yy;          //完成前,完成後のパズル画像オフセット
 	static int ff = 0;  //完成状態  0:完成  1:未完成
 	int ffr = 1;       //完成状態履歴 0:更新無し 1:更新直後
-	int temp;         //値交換用
-	
+	static HANDLE face_detect_h = NULL;
+	cv::Mat c_img;        //カメラ画像格納
+		
 	para *prs = &p->paras[p->size];
 	imxy *img = p->img;
 
-	if (f == 4){ EWC_Close(0); return; }//カメラ終了処理
+	if (p->mcf == 1)mf = 1;//静止画,動画判別更新
+	if (p->mcf == 2){ mf = 1; camf = 1;}//カメラファイル選択, 動画判別ON, カメラファイル選択ON
+	if ((p->gfr == 6 || p->gfr == 7) && face_detect_h == NULL){
+		face_detect_h = (HANDLE)_beginthreadex(NULL, 0, face_detect, p, 0, NULL);//スレッドスタート
+	}
+	if (p->gfr != 6 && p->gfr != 7){p->th_f = 0; p->th_st = 0;}//検出処理未選択時フラグ初期化
 
-	stl = strlen(p->g_name) - 4;
-	if (!strcmp(p->g_name + stl, ".mpg") || !strcmp(p->g_name + stl, ".avi"))mf = 1;//静止画,動画判別更新
-	if (!strcmp(p->g_name, "z_cam_ewc.bmp")){ mf = 1; camf = 1;}//カメラファイル選択, 動画判別ON, カメラファイル選択ON
-		
+/********************************************************************************************************************************/
+/********************************************動画 カメラ初期処理開始*************************************************************/
+/********************************************************************************************************************************/
+	
 	if (mf == 1) {        //動画ファイルオープン,描画,リサイズ処理
 		if (camf == 0){  //カメラファイル選択していない場合は動画ファイル処理↓
 			if (GetMovieStateToGraph(p->mof) != 1){//動画再生,停止判別用ハンドルを再生用に使う(file関数での判別にも使用してる)
@@ -56,31 +92,79 @@ void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, 
 				GetGraphSize(p->mof, &xs, &ys);  //サイズ読み込み
 				PlayMovieToGraph(p->mof);       //動画ファイルopen
 			}
-			DrawGraph(0, 0, p->mof, TRUE);    //動画ファイルopen後の描画の前処理用の描画                
-			SaveDrawScreen(0, 0, xs, ys, "./save/save.bmp");//描画した画像の保存
-			g2 = LoadSoftImage("./save/save.bmp");         //保存した画像のソフトイメージ読み込み(g2==元画像ソフトイメージ)
-		}
+			// 動画の更新も兼ねているので毎フレーム GetMovieBaseImageToGraph を呼ぶ
+           //動画更新は非同期なので、中身がNULLの間は次の処理に行かない
+			do{
+				MovieImage = GetMovieBaseImageToGraph(p->mof);//読み込み, BASEIMAGE格納
+				p->th_f = 1;                                 //検出スレッドスタート
+
+			} while (MovieImage->GraphData == NULL);
+			
+			g2 = MakeXRGB8ColorSoftImage(xs, ys); //ソフトイメージ格納用
+
+			// ピクセルフォーマットが R8G8B8 の 24bit の場合と X8R8G8B8 の 32bit の場合があるので switch で分岐
+			switch (MovieImage->ColorData.ColorBitDepth)
+			{
+			case 24:	// R8G8B8
+				for (i = 0; i < MovieImage->Height; i++)
+				{
+					// iライン目のピクセル情報が格納されているメモリアドレスの算出
+					Image = (BYTE *)MovieImage->GraphData + i * MovieImage->Pitch;
+
+					for (j = 0; j < MovieImage->Width; j++)
+					{
+						DrawPixelSoftImage(g2, j, i, Image[2], Image[1], Image[0], 0);
+						Image += 3;	// 1pixel分メモリアドレスを進める
+					}
+				}
+				break;
+
+			case 32:	// X8R8G8B8
+				for (i = 0; i < MovieImage->Height; i++)
+				{
+					// iライン目のピクセル情報が格納されているメモリアドレスの算出
+					Image = (BYTE *)MovieImage->GraphData + i * MovieImage->Pitch;
+
+					for (j = 0; j < MovieImage->Width; j++)
+					{
+						DrawPixelSoftImage(g2, j, i, Image[2], Image[1], Image[0], 0);
+						Image += 4;	// 1pixel分メモリアドレスを進める
+					}
+				}
+				break;
+			}//switch終わり
+			
+
+		}  //動画ファイル処理終了
 		else {//カメラファイル選択してる場合
-			g2 = MakeXRGB8ColorSoftImage(320, 240);//ハンドルにカラ画像設定
+			g2 = MakeXRGB8ColorSoftImage(640, 480);//ハンドルにカラ画像設定
 
-			if (EWC_GetCamera() == 0){      //カメラが接続,又はOPENされてない場合カメラOPEN処理
-				EWC_Open(0, 320, 240, 30.);//カメラopen カメラ識別番号,x軸,y軸,FPS(最初だけ実行必要)
+			if (p->cap.isOpened() == false){         //カメラが接続,又はOPENされてない場合カメラOPEN処理(openCV)
+				p->cap.open(0);                     //カメラopen
+				p->cap.set(CV_CAP_PROP_FPS, 30.0); //フレームレート30にする
 			}
+			p->cap >> c_img;        //画像データ更新
+			p->th_f = 1;           //検出スレッド稼働　   
 
-			EWC_GetImage(0, buffer);//EWCLIB内部にあるフレームバッファから buffer へ画像データをコピー
-			k = 0;
-			for (j = 0; j < 240; j++){
-				for (i = 0; i < 320; i++){
-					r = buffer[k] >> 16;//各色情報(各8bit計24bit)をシフト演算で取り出す
-					g = (buffer[k] - (r << 16)) >> 8;
-					b = buffer[k++] - (r << 16) - (g << 8);
-					DrawPixelSoftImage(g2, i, j, r, g, b, 0);//カライメージハンドルに取得した色情報を描画(g2==元画像ソフトイメージ)
+			for (int y = 0; y < c_img.rows; y++){
+				for (int x = 0; x < c_img.cols; x++){
+					DrawPixelSoftImage(g2, x, y, c_img.data[y * c_img.step + x * c_img.channels() + 2],
+						c_img.data[y * c_img.step + x * c_img.channels() + 1],
+						c_img.data[y * c_img.step + x * c_img.channels() + 0], 0);
 				}
 			}
-			if (EWC_GetCamera() == 0){ DeleteGraph(g2); g2 = LoadSoftImage("z_cam_ewc.bmp"); }//カメラ未接続の場合"cam_ewc.bmp"をそのままcamに格納
-		}//else終わり(カメラ処理)
 
-		pic_resize(p, g2);//pic_resize関数実行(p.imgpiに色情報格納)
+			if (p->cap.isOpened() == false){ DeleteGraph(g2); g2 = LoadSoftImage("./dat/img/z_cam_ewc.dat"); }//カメラ未接続の場合"z_cam_ewc.dat"をそのままg2に格納
+		}//else終わり(カメラ処理)
+		
+		//カメラ,動画選択時の検出後処理
+		if (p->gfr == 6 || p->gfr == 7){  //顔面検出選択時
+			if (p->th_st){               //検出スレッド1回目の処理完了してるか?
+				g2 = face_detect_after(p, g2);//検出処理後の描画処理関数呼び出し
+			}
+		}
+
+		if (g2 != 0)pic_resize(p, g2);//g2にハンドル格納されていたら, pic_resize関数実行(p.imgpiに色情報格納)
 		DeleteSoftImage(g2);//g2解放
 
 		if (f == 3 || f == 2) {//ファイル関数実行時のみ処理(ファイル関数では1枚絵で表示の為分割せずにそのまま表示)
@@ -95,12 +179,35 @@ void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, 
 
 	}//動画ファイルオープン,描画,リサイズ処理終了
 
+/********************************************************************************************************************************/
+/********************************************動画 カメラ初期処理終了*************************************************************/
+/********************************************************************************************************************************/
 
-	if (f == 1 && mf != 1){  //静止画で更新が必要な時のみ実行する(引数fで操作,mf !=1(動画ではない時の処理))
+/********************************************************************************************************************************/
+/*********************************************静止画初期処理開始*****************************************************************/
+/********************************************************************************************************************************/
+	
+	if (f == 1 && mf != 1){             //静止画で更新が必要な時のみ実行する(引数fで操作,mf !=1(動画ではない時の処理))
 		g2 = LoadSoftImage(p->g_name); //画像読み込み
-		pic_resize(p, g2);     //pic_resize関数実行(p.imgpiに色情報格納)
+		if (p->gfr == 6 || p->gfr == 7){     //顔面検出選択時
+			p->th_f = 1;                    //検出スレッド検出部ループON
+			while (p->th_st != 1);         //検出スレッド処理完待ち(volatile付けないと最適化で無限ループになる)
+			g2 = face_detect_after(p, g2);//検出処理後の描画処理関数呼び出し
+			
+		}
+		if (g2 != 0)pic_resize(p, g2);    //pic_resize関数実行(p.imgpiに色情報格納)
 		DeleteSoftImage(g2);  //ハンドルg2解放
 	}
+
+/********************************************************************************************************************************/
+/*********************************************静止画初期処理終了*****************************************************************/
+/********************************************************************************************************************************/
+
+
+	
+/********************************************************************************************************************************/
+/***************************************ファイル関数用静止画処理開始*************************************************************/
+/********************************************************************************************************************************/
 
 	if (f == 2 && mf != 1){             //静止画でファイル関数用の初期処理(毎回LoadSoftImageを呼ばないようにする為)
 		g2 = LoadSoftImage(p->g_name); //画像読み込み
@@ -118,32 +225,55 @@ void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, 
 		}
 		return;
 	}
-		
-    //モノクロ画像処理,エッジ検出,エンボス処理(静止画,動画,どちらでも使用する)p->gfrの値はpuzzle_mainから操作している
+
+/********************************************************************************************************************************/
+/***************************************ファイル関数用静止画処理終了*************************************************************/
+/********************************************************************************************************************************/
+
+
+/********************************************************************************************************************************/
+/********************************************各種画像処理開始********************************************************************/
+/********************************************************************************************************************************/
+
+    //モノクロ画像処理,エッジ検出,エンボス処理,絵画風処理(静止画,動画,どちらでも使用する)p->gfrの値はpuzzle_mainから操作している
 	//mf==1動画ONでgfrが一致で実行, f==1静止画更新有りでgfr一致で実行
-	if ((p->gfr == 1 || p->gfr == 3 || p->gfr == 4) && (mf == 1 || f == 1)) {
+	if ((p->gfr == 1 || p->gfr == 3 || p->gfr == 4 || p->gfr == 5 || p->gfr == 8) && (mf == 1 || f == 1)) {
 		pi16 = (int**)malloc(sizeof(int*) * p->xrs);//エッジ,エンボス処理一時保管用メモリ確保
 		for (i = 0; i < p->xrs; i++){ pi16[i] = (int*)malloc(sizeof(int) * p->yrs); }
 
 		for (j = 0; j < p->yrs; j++){
 			for (i = 0; i < p->xrs; i++){
 				if (p->gfr == 1){//モノクロ画像処理
-					r = p->imgpi[i][j] >> 16;
-					g = (p->imgpi[i][j] - (r << 16)) >> 8;
-					b = p->imgpi[i][j] - (r << 16) - (g << 8);
+					r = p->imgpi[i][j] >> 16 & 0xff;//0xは16進数 0xffで下4ビット &論理積
+					g = p->imgpi[i][j] >> 8 & 0xff;
+					b = p->imgpi[i][j] & 0xff;
 					mono = (r + g + b) / 3;//(赤＋緑＋青)÷3
 					p->imcpy[i][j] = p->imgpi[i][j] = (mono << 16) + (mono << 8) + mono;//色情報を平均化するとモノクロになる
 				}//モノクロ処理終わり
 
+				if (p->gfr == 5){//絵画風処理
+					r = (p->imgpi[i][j] >> 16 & 0xff) / 60 * 60;
+					g = (p->imgpi[i][j] >> 8 & 0xff) / 60 * 60;
+					b = (p->imgpi[i][j] & 0xff) / 60 * 60;
+					p->imcpy[i][j] = p->imgpi[i][j] = (r << 16) + (g << 8) + b;
+				}
+
+				if (p->gfr == 8){//ネガポジ処理
+					r = 255 - (p->imgpi[i][j] >> 16 & 0xff);
+					g = 255 - (p->imgpi[i][j] >> 8 & 0xff);
+					b = 255 - (p->imgpi[i][j] & 0xff);
+					p->imcpy[i][j] = p->imgpi[i][j] = (r << 16) + (g << 8) + b;
+				}
+
 				if (p->gfr == 3 || p->gfr == 4){//エッジ検出,エンボス前処理
-					r = p->imgpi[i][j] >> 16;
-					g = (p->imgpi[i][j] - (r << 16)) >> 8;
-					b = p->imgpi[i][j] - (r << 16) - (g << 8);
+					r = p->imgpi[i][j] >> 16 & 0xff;
+					g = p->imgpi[i][j] >> 8 & 0xff;
+					b = p->imgpi[i][j] & 0xff;
 					pi16[i][j] = (r + g + b) / 3;
 				}//エッジ検出,エンボス前処理終わり
 			}   //for終わり
 		}      //for終わり
-		if ((p->gfr == 3 || p->gfr == 4) && (mf == 1 || f == 1)) {//エッジ検出,エンボス後処理
+		if (p->gfr == 3 || p->gfr == 4) {//エッジ検出,エンボス後処理
 
 			for (j = 0; j < p->yrs; j++){
 				for (i = 0; i < p->xrs; i++){
@@ -167,50 +297,44 @@ void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, 
 
 					if (p->gfr == 3){                 //エッジ検出計算
 						pi = sqrt(ghs*ghs + gvs*gvs);//sqrt平方根(pow関数でやるつもりだったがうまくいかない)
+						if (pi < 50)pi = 0;        //背景色(黒)を0にする
+						if (pi > 255)pi = 255;
+						p->imcpy[i][j] = p->imgpi[i][j] = (pi << 16) + (pi << 8) + pi;
 					}
 					if (p->gfr == 4){         //エンボス計算
 						pi = (ghs + gvs) / 2;//とりあえずこの計算方法にするとエンボスになるみたい
 						pi += 128;          //灰色っぽくした方がそれらしく見える
+						if (pi < 1)pi = 1;
+						if (pi > 255)pi = 255;
+						p->imcpy[i][j] = p->imgpi[i][j] = (pi << 16) + (pi << 8) + pi;
 					}
-					if (pi < 1)pi = 1;
-					if (pi > 255)pi = 255;
-					p->imcpy[i][j] = p->imgpi[i][j] = (pi << 16) + (pi << 8) + pi;
+					
 				}//for終わり
 			}   //for終わり
 		}      //if エッジ,エンボス後処理終わり
-		for (i = 0; i < p->yrs; i++)free(pi16[i]);//エッジ,エンボス処理一時保管用メモリ解放
+		for (i = 0; i < p->xrs; i++)free(pi16[i]);//エッジ,エンボス処理一時保管用メモリ解放
 		free(pi16);
 	}//モノクロ,エッジ検出,エンボス処理終わり
 
-    //モザイク処理,水彩画風処理(動画,静止画どちらでも使う)
+    //モザイク処理(動画,静止画どちらでも使う)
 	//gfr一致でmf==1動画ONで実行  gfr一致でf==1静止画更新有りで実行
-	if ((p->gfr == 2 || p->gfr == 5) && (mf == 1 || f == 1)) {
+	if (p->gfr == 2 && (mf == 1 || f == 1)) {
 		for (j = 0; j < p->yrs - 10; j += 10){
 			for (i = 0; i < p->xrs - 10; i += 10){
-				//モザイク処理
-				if (p->gfr == 2){
-					for (j1 = j; j1 < j + 10; j1++){
-						for (i1 = i; i1 < i + 10; i1++){
-							p->imcpy[i1][j1] = p->imgpi[i1][j1] = p->imgpi[i][j];//10pixel連続で同色描写でモザイクになる
-						}
-					}
-				}
-				//水彩画風処理
-				if (p->gfr == 5){
-					for (i1 = 0; i1 < 20; i1++){//20回ランダムで入れ替え
-						rd = rand() % 10;
-						rd1 = rand() % 10;
-						rd2 = rand() % 10;
-						rd3 = rand() % 10;
-						temp = p->imgpi[i + rd][j + rd1];
-						p->imcpy[i + rd][j + rd1] = p->imgpi[i + rd][j + rd1] = p->imgpi[i + rd2][j + rd3];
-						p->imcpy[i + rd2][j + rd3] = p->imgpi[i + rd2][j + rd3] = temp;
+				for (j1 = j; j1 < j + 10; j1++){
+					for (i1 = i; i1 < i + 10; i1++){
+						p->imcpy[i1][j1] = p->imgpi[i1][j1] = p->imgpi[i][j];//10pixel連続で同色描写でモザイクになる
 					}
 				}
 			}
 		}
-	}
+	}//モザイク処理終わり
+		
+/********************************************************************************************************************************/
+/********************************************各種画像処理終了********************************************************************/
+/********************************************************************************************************************************/
 
+	
 	//ヒストグラムデータ処理(更新必要時,実行)
 	if (mf == 1 || f == 1){
 		for (i = 0; i < 128; i++){  //初期化
@@ -220,9 +344,9 @@ void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, 
 		}
 		for (j = 0; j < p->yrs; j++){//各色,各階調毎に個数増加
 			for (i = 0; i < p->xrs; i++){
-				r = p->imgpi[i][j] >> 16;
-				g = (p->imgpi[i][j] - (r << 16)) >> 8;
-				b = p->imgpi[i][j] - (r << 16) - (g << 8);
+				r = p->imgpi[i][j] >> 16 & 0xff;
+				g = p->imgpi[i][j] >> 8 & 0xff;
+				b = p->imgpi[i][j] & 0xff;
 				hist[r / 2].rp++;
 				hist[g / 2].gp++;
 				hist[b / 2].bp++;
@@ -230,31 +354,39 @@ void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, 
 		}
 	}//ヒストグラムデータ処理終了
 
-			
+/********************************************************************************************************************************/
+/********************************************最終画像描画処理開始****************************************************************/
+/********************************************************************************************************************************/
+		
     //↓毎回実行する処理(ファイル関数以外)
 	ClearDrawScreen();  //画面消去
 	back_image(1);     //背景描画関数,引数1==画像描画
 	//パズル部以外の画像描画左側
 	for (i = 0; i < (p->xrs - 400) / 2; i++){
 		for (j = 0; j < 400; j++){
+			//ifエッジ検出時の背景色描画スキップ処理以下同じ処理有り
+			if (p->gfr == 3 && p->imgpi[i][j] == 0)continue;
 			DrawPixel(i + (800 - p->xrs) / 2 + 1, j + 100, p->imgpi[i][j]);//+1は補正
 		}
 	}  
 	//パズル部以外の画像描画右側
 	for (i = p->xrs - (p->xrs - 400) / 2; i < p->xrs; i++){
 		for (j = 0; j < 400; j++){
-			DrawPixel(i + (800 - p->xrs) / 2, j + 100, p->imgpi[i][j]);
+			if (p->gfr == 3 && p->imgpi[i][j] == 0)continue;
+			DrawPixel(i + (800 - p->xrs) / 2 - 1, j + 100, p->imgpi[i][j]);
 		}
 	}
     //パズル部以外の画像描画上側
 	for (j = 0; j < (p->yrs - 400) / 2; j++){
 		for (i = 0; i < 400; i++){
+			if (p->gfr == 3 && p->imgpi[i][j] == 0)continue;
 			DrawPixel(i + 200, j + (600 - p->yrs) / 2, p->imgpi[i][j]);
 		}
 	}
 	//パズル部以外の画像描画下側
 	for (j = p->yrs - (p->yrs - 400) / 2; j < p->yrs; j++){
 		for (i = 0; i < 400; i++){
+			if (p->gfr == 3 && p->imgpi[i][j] == 0)continue;
 			DrawPixel(i + 200, j + (600 - p->yrs) / 2, p->imgpi[i][j]);
 		}
 	}
@@ -275,9 +407,9 @@ void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, 
 				//↓そのまま変換すると色が変わっていってしまうので一旦元に戻す
 				p->imgpi[i + (p->xrs - 400) / 2][j + (p->yrs - 400) / 2] = p->imcpy[i + (p->xrs - 400) / 2][j + (p->yrs - 400) / 2];
 				//↓色取得変換
-				r = (p->imgpi[i + (p->xrs - 400) / 2][j + (p->yrs - 400) / 2] >> 16);
-                g = ((p->imgpi[i + (p->xrs - 400) / 2][j + (p->yrs - 400) / 2] - (r << 16)) >> 8);
-			    b = (p->imgpi[i + (p->xrs - 400) / 2][j + (p->yrs - 400) / 2] - (r << 16) - (g << 8));
+				r = p->imgpi[i + (p->xrs - 400) / 2][j + (p->yrs - 400) / 2] >> 16 & 0xff;
+                g = p->imgpi[i + (p->xrs - 400) / 2][j + (p->yrs - 400) / 2] >> 8 & 0xff;
+			    b = p->imgpi[i + (p->xrs - 400) / 2][j + (p->yrs - 400) / 2] & 0xff;
 				r -= p->block[i][j];
 				g -= p->block[i][j];
 				b -= p->block[i][j];
@@ -293,6 +425,7 @@ void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, 
 	if (ff == 0 && mf == 0){    //完成済み静止画処理
 		for (j = 0; j < p->yrs; j++){
 			for (i = 0; i < p->xrs; i++){
+				if (p->gfr == 3 && p->imgpi[i][j] == 0)continue;
 				p->imgpi[i][j] = p->imcpy[i][j];//ブロック画像処理前データをコピー
 			}
 		}
@@ -320,7 +453,7 @@ void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, 
 	for (i = 0; i < prs->idx; i++){ //パズル部画像描画処理
 		for (j = 0; j < prs->bsize; j++){     //1ブロック内y方向
 			for (k = 0; k < prs->bsize; k++){//1ブロック内x方向
-							
+				if (p->gfr == 3 && p->imgpi[k + img[i].fx - 200 + (p->xrs - 400) / 2][j + img[i].fy - 100 + (p->yrs - 400) / 2] == 0)continue;
 				//表示座標位置＋オフセット, 表示色情報(完成座標位置－オフセット)
 				DrawPixel(k + img[i].cx + xx + x, j + img[i].cy + yy + y,     
 					p->imgpi[k + img[i].fx - 200 + (p->xrs - 400) / 2]
@@ -334,6 +467,19 @@ void drawing_img(alldata *p, int x, int y, int f){ //x,yは描画時のオフセット量, 
 		DrawLine(640 + i, 300, 640 + i, 300 - hist[i].gp / 80, GetColor(0, i * 2, 0));
 		DrawLine(640 + i, 400, 640 + i, 400 - hist[i].bp / 80, GetColor(0, 0, i * 2));
 	}//ヒストグラム描画終了
+
+	//完成例画像描画
+	if (p->finish == 1){
+		for (i = 0; i < 200; i++){
+			for (j = 0; j < 200; j++){
+				if (p->gfr == 3 && p->imgpi[(p->xrs - 400) / 2 + i * 2][(p->yrs - 400) / 2 + j * 2] == 0)continue;
+				DrawPixel(i + 600, j + 400, p->imgpi[(p->xrs - 400) / 2 + i * 2][(p->yrs - 400) / 2 + j * 2]);
+			}
+		}
+	}
+/********************************************************************************************************************************/
+/********************************************最終画像描画処理終了****************************************************************/
+/********************************************************************************************************************************/
 
 	InitSoftImage();//ソフトイメージ全開放
 }                 //drawing_img()終了

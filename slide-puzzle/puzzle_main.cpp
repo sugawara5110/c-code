@@ -31,12 +31,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int){    //メイン関数
 	int i, j, k;          //for文
 	int frg = 0;         //キー入力
 	int Color;          //色
-	time_t sec1,sec2;  //待ち時間用
-	int stl;          //画像ファイル名文字列長さ
-	int sm[2];       //手数計算処理前スペース座標退避用
+	//time_t sec1,sec2;//待ち時間用
+	int sm[2];        //手数計算処理前スペース座標退避用
     
-	p.cnt_results = 0;//手数計算結果確認用
-	p.gfr = 0;       //画像モード初期化(モノクロ等)
+	p.cnt_results = 0;  //手数計算結果確認用
+	p.gfr = 0;         //画像モード初期化(モノクロ等)
+	p.size = 0;       //エラー防止 
+	p.tkf = 0;       //手数計算実行フラグ初期化
+	p.tkc = 0;      //手数計算カウント初期化
+	p.mc = 0;      //pic_resize内メモリ確保チェック初期化 0:未確保, 1:確保済み
+	p.lock = 0;   //データ操作時ロック初期化(本スレ)
+	p.lock_t = 0;//データ操作時ロック初期化(検出スレッド)
 
 	p.paras[0] = { 16, 4, 100, 500, 400, 400, 15, 31, 5, 10 };    //ブロック個数毎のパラメーター
 	p.paras[1] = { 64, 8, 50, 550, 450, 800, 63, 127, 5, 10 };
@@ -49,27 +54,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int){    //メイン関数
 	InitSoftImage();                 //ソフトイメージ全開放
 	Color = GetColor(255, 255, 255);//字の色
     
-	//↓初期設定
-	back_image(0);     //背景描画関数,引数0==画像をハンドルに格納
-	mouse(&p,0,0);    //マウス関数初期設定 
-	sound(0);        //サウンド関数初期処理
-	p.size = 0;     //エラー防止 
+	back_image(0);    //背景描画関数,引数0==画像をハンドルに格納
+	mouse(&p,0,0);   //マウス関数初期設定 
+	sound(0);       //サウンド関数初期処理
 	file(&p);      //画像ファイル選択関数呼び出しで,p.g_nameに画像ファイル名格納
-	p.tkf = 0;    //手数計算実行フラグ初期化
-	p.tkc = 0;   //手数計算カウント初期化
-	p.mc = 0;   //pic_resize内メモリ確保チェック初期化 0:未確保, 1:確保済み
-		
+	
+				
 	while (1){ //1番外側のwhile文
 
 		back_image(1);         //背景描画関数,引数1==画像描画
 
 		while (frg == 0){    //個数決定
 			if (ProcessMessage() == -1){ InitSoftImage(); DxLib_End(); free(p.img); return -1; }//強制終了
-            frg = mouse(&p,2,0);//マウス関数
-			ScreenFlip();      //表画面に描写
-            p.size = frg - 1; //size決定
-        }                    //while終わり
-		sound(1);           //サウンド関数ボタン音
+			drawing_img(&p, 0, 0, 2); //描画前処理
+			drawing_img(&p, 0, 0, 3);//描画
+			frg = mouse(&p, 2, 0);  //マウス関数
+            ScreenFlip();          //表画面に描写
+        }                         //while終わり
+		p.size = frg - 1;        //size決定
+		sound(1);               //サウンド関数ボタン音
 
 		//メモリ確保
 		p.img = (imxy*)malloc(sizeof(imxy)*p.paras[p.size].idx);//画像座標
@@ -130,7 +133,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int){    //メイン関数
 		drawing_img(&p, 0, 0, 1);//初期画像描画
 		ScreenFlip();           //表画面描写
 
-		sec2 = 0; for (time(&sec1); sec2 - sec1 <= 0.7; time(&sec2));//待ち時間
+		//sec2 = 0; for (time(&sec1); sec2 - sec1 <= 0.7; time(&sec2));//待ち時間
 
 		shuffle(&p);               //シャッフル関数
 		change(&p);               //ブロック交換関数
@@ -142,7 +145,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int){    //メイン関数
 				frg = mouse(&p,3,0);  //マウス関数
 
 				ScreenFlip();       //表画面描写
-				if (frg >= 5) {    //移動フラグ以外の時は飛ばす
+				if (frg >= 5) {    //移動フラグの時は飛ばす
 					if (frg == 5){//全ブロック位置元通り処理↓
 						sound(1);//サウンド関数ボタン音  
 						for (i = 0; i < p.paras[p.size].idx; i++){ p.img[i].chx = p.img[i].fx; p.img[i].chy = p.img[i].fy; } //完成画像データからコピー
@@ -162,12 +165,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int){    //メイン関数
 					}
 
 					if (frg == 8){//個数変更
-						InitSoftImage(); free(p.img); frg = 0; break;
+						InitSoftImage(); free(p.img);
+						for (i = 0; i < 400; i++)free(p.block[i]);
+						free(p.block);
+						p.th_st = 0;           //スレッド進行状況初期化
+						p.gfr = 0;            //画像モードリセット
+						frg = 0;break;
 					} //読み込み済みグラフィックデータ削除,メモリ解放,break
 
-					if (frg == 9){//画像変更
-						frg = 0; file(&p); back_image(1); drawing_img(&p, 0, 0, 1);
-					} //ファイル関数呼び出し,背景,画像描画
+					if (frg == 9){             //画像変更
+						p.th_f = 0;           //検出スレッドフラグ初期化
+						p.gfr = 0;           //画像モードリセット
+						frg = 0; file(&p);      //ファイル関数呼び出し
+						p.th_st = 0;           //検出スレッド進行状況初期化
+						back_image(1); drawing_img(&p, 0, 0, 1);//背景,画像描画
+					} 
 
 					if (frg == 10) {//通常画像画像処理
 						p.gfr = 0; frg = 0; back_image(1); drawing_img(&p, 0, 0, 1);
@@ -218,19 +230,32 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int){    //メイン関数
 						p.gfr = 4; frg = 0; back_image(1); drawing_img(&p, 0, 0, 1);
 					}
 
-					if (frg == 16) {//水彩画風処理
+					if (frg == 16) {//絵画風処理
 						p.gfr = 5; frg = 0; back_image(1); drawing_img(&p, 0, 0, 1);
 					}
-				}//移動フラグ以外の時は飛ばす
+
+					if (frg == 17) {//顔面検出処理
+						p.th_f = 0; //検出スレッドスタートフラグ0:ストップ 1:スタート
+						p.th_st = 0;//スレッド進行状況初期化
+						p.gfr = 6; frg = 0; back_image(1); drawing_img(&p, 0, 0, 1);
+					}
+
+					if (frg == 18) {//顔面モザイク処理
+						p.th_f = 0; //検出スレッドスタートフラグ0:ストップ 1:スタート
+						p.th_st = 0;//スレッド進行状況初期化
+						p.gfr = 7; frg = 0; back_image(1); drawing_img(&p, 0, 0, 1);
+					}
+
+					if (frg == 19) {//ネガポジ処理
+						p.gfr = 8; frg = 0; back_image(1); drawing_img(&p, 0, 0, 1);
+					}
+
+				}//移動フラグの時は飛ばす
 			
 				mov(&p, 0, frg, 0); //移動処理
 			
-			stl = strlen(p.g_name) - 4;
-			if (!strcmp(p.g_name + stl, ".mpg") || !strcmp(p.g_name + stl, ".avi") ||
-				!strcmp(p.g_name, "z_cam_ewc.bmp")){//動画,カメラの時は常に呼び出す
-				drawing_img(&p, 0, 0, 1);
-			}
-
+				drawing_img(&p, 0, 0, 0);
+	
 			frg = 0; //移動フラグ初期化
 
 		}  //while終わり

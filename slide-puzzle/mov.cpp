@@ -21,7 +21,6 @@ int mov(alldata *p,int *cnt,int frg, int autof){  //移動処理関数宣言 cnt移動禁止
 	para *prs = &p->paras[p->size];
 	imxy *img = p->img;
 	int *sp = p->space;
-	int stl; //ファイル名文字列
 
 	offset[0] = 0, offset[1] = 0;//初期化
 		
@@ -40,17 +39,15 @@ int mov(alldata *p,int *cnt,int frg, int autof){  //移動処理関数宣言 cnt移動禁止
 	if (k >= 0){             //移動対象ブロック決定時のみ実行
 		if (p->tkf != 1){   //手数計算フラグ1以外に実行
 			mv = prs->move;//通常移動量初期化
-			stl = strlen(p->g_name) - 4;
-			if (!strcmp(p->g_name + stl, ".mpg") || !strcmp(p->g_name + stl, ".avi") ||
-				!strcmp(p->g_name, "z_cam_ewc.bmp")){//動画ブロック時,移動量に更新
-				mv = prs->movem;                    //動画ブロック時移動量更新
+			if (p->mcf == 1 || p->mcf == 2){//動画ブロック時,移動量に更新
+				mv = prs->movem;           //動画ブロック時移動量更新
 			}
 
 			if (autof == 1 && mouse(p,4, offset) == 1)mv = prs->bsize;//automatic関数実行時ハイスピード
 			if (autof == 1 && mouse(p,4, offset) == 2)return 2;      //automatic関数中止
 			if (autof == 1 && mouse(p,4, offset) == 3){ mv = prs->bsize; ms = 1; }//猛スピードオン
 			
-			if (strcmp(p->g_name + stl, ".mpg") && strcmp(p->g_name + stl, ".avi"))sound(2);//サウンド関数ブロック移動処理(静止画の時のみ実行)
+			if (p->mcf == 0)sound(2);//サウンド関数ブロック移動処理(静止画の時のみ実行)
 		}
 		else{//手数計算フラグ1の時実行
 			p->tkc++;//手数カウント
@@ -67,7 +64,7 @@ int mov(alldata *p,int *cnt,int frg, int autof){  //移動処理関数宣言 cnt移動禁止
 			if (frg == 3)img[k].cy -= mv;//座標値更新 ブロック上移動
 			if (frg == 4)img[k].cy += mv;//座標値更新 ブロック下移動
 
-			if (ms == 0 && p->tkf == 0) {//猛スピードoff時描写
+			if (ms == 0 && p->tkf == 0) {//猛スピードoff時,手数計算以外時描写
 				drawing_img(p, offset[0], offset[1], 0);//画像描画
 				if (autof == 0)mouse(p,3, 0); else mouse(p,4, offset);//マウス座像描画のみ
 				ScreenFlip(); //表画面描写

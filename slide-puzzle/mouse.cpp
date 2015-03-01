@@ -25,10 +25,12 @@ int mouse(alldata *p,int f,int *offset){//fで処理操作,offsetで画像全体移動
 	int xm, ym;   //マウス座標
 	static int xof, yof;//左クリック時座標,マウス処理4で使用
 	static int mf;     //左クリック履歴,マウス処理4で使用
-	
-	if (f != 4)mf = 0;//画像オフセット処理初期化
 	cr = GetColor(0, 0, 255);
 	crs = GetColor(10, 10, 10);
+	p->finish = 0;  //完成画像表示フラグ初期化
+	
+	if (f != 4)mf = 0;//画像オフセット処理初期化
+	
 	if (f == 0){//初期処理
 		
 		bt1on = MakeXRGB8ColorSoftImage(50, 50);//ハンドルにカラ画像設定
@@ -81,7 +83,6 @@ int mouse(alldata *p,int f,int *offset){//fで処理操作,offsetで画像全体移動
 		bt2on = CreateGraphFromSoftImage(bt2on);
 		bt2of = CreateGraphFromSoftImage(bt2of);
 
-		return 0;
 	}
 
 	if (f == 1){                       //マウス処理1 
@@ -98,7 +99,6 @@ int mouse(alldata *p,int f,int *offset){//fで処理操作,offsetで画像全体移動
 		DrawTriangle(105, 25, 80, 5, 80, 45, cr, TRUE); //矢印図形描画,右
 		fr = rectangle_button(xm, ym, bt2on, bt2of, 5, 60, "  画像決定", 3, fr);
         
-		return fr;
 	}
 
 	if (f == 2){                  //マウス処理2
@@ -110,25 +110,24 @@ int mouse(alldata *p,int f,int *offset){//fで処理操作,offsetで画像全体移動
 		fr = rectangle_button(xm, ym, bt2on, bt2of, 440, 20, "  10000個", 5, fr);
 		fr = rectangle_button(xm, ym, bt2on, bt2of, 550, 20, " 160000個", 6, fr);
 
-		return fr;
 	}
 
 	if (f == 3){                 //マウス処理3
 		GetMousePoint(&xm, &ym);                       
 		DrawGraph(0, 50, bt1on, TRUE);//矢印左
-		if (xm >= 0 && xm < 50 && ym >= 50 && ym < 100)DrawGraph(0, 50, bt1of, TRUE);
-		if (xm >= 0 && xm < 50 && ym >= 50 && ym < 100 && (GetMouseInput() & MOUSE_INPUT_LEFT) != 0)
+		if (xm >= 0 && xm < 50 && ym >= 50 && ym < 100){DrawGraph(0, 50, bt1of, TRUE); p->finish = 1;}//マウス座標==ボタン範囲内か？
+		if (xm >= 0 && xm < 50 && ym >= 50 && ym < 100 && (GetMouseInput() & MOUSE_INPUT_LEFT) != 0)//範囲内かつ左クリック
 			fr = 1;
 		DrawGraph(100, 50, bt1on, TRUE);//矢印右
-		if (xm >= 100 && xm < 150 && ym >= 50 && ym < 100)DrawGraph(100, 50, bt1of, TRUE);
+		if (xm >= 100 && xm < 150 && ym >= 50 && ym < 100){DrawGraph(100, 50, bt1of, TRUE); p->finish = 1;}
 		if (xm >= 100 && xm < 150 && ym >= 50 && ym < 100 && (GetMouseInput() & MOUSE_INPUT_LEFT) != 0)
 			fr = 2;
 		DrawGraph(50, 0, bt1on, TRUE);//矢印上
-		if (xm >= 50 && xm < 100 && ym >= 0 && ym < 50)DrawGraph(50, 0, bt1of, TRUE);
+		if (xm >= 50 && xm < 100 && ym >= 0 && ym < 50){DrawGraph(50, 0, bt1of, TRUE); p->finish = 1;}
 		if (xm >= 50 && xm < 100 && ym >= 0 && ym < 50 && (GetMouseInput() & MOUSE_INPUT_LEFT) != 0)
 			fr = 3;
 		DrawGraph(50, 100, bt1on, TRUE);//矢印下
-		if (xm >= 50 && xm < 100 && ym >= 100 && ym < 150)DrawGraph(50, 100, bt1of, TRUE);
+		if (xm >= 50 && xm < 100 && ym >= 100 && ym < 150){DrawGraph(50, 100, bt1of, TRUE); p->finish = 1;}
 		if (xm >= 50 && xm < 100 && ym >= 100 && ym < 150 && (GetMouseInput() & MOUSE_INPUT_LEFT) != 0)
 			fr = 4;
 		DrawTriangle(5, 75, 30, 55, 30, 95, cr, TRUE);       //矢印左図形描画
@@ -147,9 +146,11 @@ int mouse(alldata *p,int f,int *offset){//fで処理操作,offsetで画像全体移動
 		fr = rectangle_button(xm, ym, bt2on, bt2of, 410, 75, "  手数計算", 13, fr);
 		fr = rectangle_button(xm, ym, bt2on, bt2of, 10, 280, " エッジ検出", 14, fr);
 		fr = rectangle_button(xm, ym, bt2on, bt2of, 10, 320, " エンボス", 15, fr);
-		fr = rectangle_button(xm, ym, bt2on, bt2of, 10, 360, " 水彩画風", 16, fr);
+		fr = rectangle_button(xm, ym, bt2on, bt2of, 10, 360, "  絵画風", 16, fr);
+		fr = rectangle_button(xm, ym, bt2on, bt2of, 10, 400, " 顔面検出", 17, fr);
+		fr = rectangle_button(xm, ym, bt2on, bt2of, 10, 440, "顔面モザイク", 18, fr);
+		fr = rectangle_button(xm, ym, bt2on, bt2of, 10, 480, " ネガポジ", 19, fr);
 		
-		return fr;
 	}
 
 	if (f == 4){                 //マウス処理4
@@ -165,14 +166,13 @@ int mouse(alldata *p,int f,int *offset){//fで処理操作,offsetで画像全体移動
 			xof = yof = 0; mf = 0;
 		}
 		if (mf == 1 && (GetMouseInput() & MOUSE_INPUT_LEFT) != 0){ offset[0] = xm - xof; offset[1] = ym - yof; }//画像オフセット処理
-		
-			return fr;
+			
 	}
 
 	if (f == 5){   //マウス処理5,手数計算
 		GetMousePoint(&xm, &ym);
 		if (xm >= 200 && xm < 600 && ym >= 100 && ym < 500 && (GetMouseInput() & MOUSE_INPUT_LEFT) != 0)fr = 1;//画像内を差し,かつ左クリック
-		return fr;
+		
 	}
-	return 0;
+	return fr;
 }

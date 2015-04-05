@@ -6,10 +6,12 @@
 
 #include "DxLib.h"
 #include <process.h>
-#include "struct_set.h"
+#include <opencv2/opencv.hpp>
+#include <opencv2/opencv_lib.hpp>
+#include "ImageRead.h"
+#include "ImageDraw.h"
 
 unsigned __stdcall face_detect(void *th){
-
 
 	// 学習済み検出器の読み込み
 	cv::string cascadeName = "dat\\xml\\haarcascade_frontalface_alt2.xml";
@@ -17,17 +19,29 @@ unsigned __stdcall face_detect(void *th){
 	if (!cascade.load(cascadeName))
 		return -1;
 
-	alldata_t p_t = (alldata_t)th;//本スレッドからデータ受け取り(alldataとalldata_tは中身は同じ)
+	ImageRead::drawdata_t d_t = (ImageRead::drawdata_t)th;//本スレッドからデータ受け取り(drawdataとdrawdata_tは中身は同じ)
 	cv::vector<cv::Rect> faces;     //検出箇所
 	cv::VideoCapture video;        //検出スレッド動画再生ハンドル
 	cv::Mat ori, ori2;
-    cv::Mat dts;
-    cv::Mat grayImage;           //検出用グレースケールデータ格納用
-    int time1;                  //本スレッドと同期取り用変数
-	int x, y, i, j;            //for
-	int max_x, max_y,         //顔面モザイク範囲
-		min_x, min_y;
-	p_t->th_st = 0;         //スレッド進行状況初期化
+	cv::Mat dts;
+	cv::Mat grayImage;         //検出用グレースケールデータ格納用
+	REFTIME time1;            //本スレッドと同期取り用変数
+	int x, y, i, j, x1, y1;  //for
+
+	typedef struct{
+		int max_x;
+		int max_y;
+		int min_x;
+		int min_y;
+	}detect_range;
+	detect_range dtr[200];//顔面検出範囲
+	int dtrp;            //検出個数
+	int dti;            //添え字
+	int col, row;      //for
+	int xs, ys;       //検出箇所元サイズ
+	int xrs, yrs;    //検出箇所リサイズ後サイズ
+
+	d_t->th_st = 0;         //スレッド進行状況初期化
 
 	while (1){            //この関数が呼ばれたらずっとループしっぱなし 
 		try{             //例外処理,機能してるか知らんが一応つけた。
@@ -35,13 +49,13 @@ unsigned __stdcall face_detect(void *th){
 				video.release();         //動画ファイル閉じ
 			}
 
-			while (p_t->th_f == 1 && (p_t->gfr == 6 || p_t->gfr == 7)){//検出処理スタートフラグ,  検出処理選択
+			while (d_t->th_f == 1 && (d_t->gfr == 6 || d_t->gfr == 7 || d_t->gfr == 10)){//検出処理スタートフラグ,  検出処理選択
 
-				switch (p_t->mcf){  //0:静止画選択中 1:動画選択中 2:カメラ選択中
+				switch (d_t->mcf){  //0:静止画選択中 1:動画選択中 2:カメラ選択中
 
 					//静止画処理開始
 				case 0:
-					ori = cv::imread(p_t->g_name, CV_LOAD_IMAGE_COLOR);//画像読み込み
+					ori = cv::imread(d_t->g_name, CV_LOAD_IMAGE_COLOR);//画像読み込み
 
 					break;
 					//静止画処理終了
@@ -49,14 +63,15 @@ unsigned __stdcall face_detect(void *th){
 					//動画処理開始
 				case 1:
 					if (video.isOpened() == false){//動画ファイルcloseの場合
-						video.open(p_t->g_name);  //動画ファイルopen
+						video.open(d_t->g_name);  //動画ファイルopen
 					}
-					time1 = TellMovieToGraph(p_t->mof);     //再生位置取得(ミリ秒)
-					video.set(CV_CAP_PROP_POS_MSEC, time1);//映像音声同期
+
+					d_t->pMediaPosition->get_CurrentPosition(&time1);//再生位置取得(秒)
+					video.set(CV_CAP_PROP_POS_MSEC, time1 * 1000);//映像同期(こっちはミリ秒単位なので1000かける)
 					video >> ori;                         //フレーム読み込み
 					if (ori.empty()){                    //フレームが空か？	
 						video.release();
-						video.open(p_t->g_name);
+						video.open(d_t->g_name);
 						video >> ori;
 					}
 
@@ -65,7 +80,7 @@ unsigned __stdcall face_detect(void *th){
 
 					//カメラ処理開始
 				case 2:
-					p_t->cap >> ori;
+					d_t->cap >> ori;
 					break;
 					//カメラ処理終了
 
@@ -101,62 +116,174 @@ unsigned __stdcall face_detect(void *th){
 					//void rectangle(Mat& img, Point pt1, Point pt2, const Scalar& color, int thickness=1, int lineType=8, int shift=0)
 				}
 
-/*****************************************顔面モザイク処理開始***********************************************************/
-				if (p_t->gfr == 7){
+				/*****************************************顔面モザイク,顔すげ替え処理開始***********************************************************/
+				if (d_t->gfr == 7 || d_t->gfr == 10){
 					//半分にリサイズ
 					cv::resize(ori, ori2, cv::Size(), 0.5, 0.5, cv::INTER_CUBIC);
-					max_x = max_y = 0;      //モザイク範囲初期化
-					min_x = ori2.cols - 1; //モザイク範囲初期化
-					min_y = ori2.rows - 1;//モザイク範囲初期化
+					dtrp = 0;//検出個数初期化
+					dti = 0;//添え字
 
-					for (y = 0; y < dts.rows; y++){
-						for (x = 0; x < dts.cols; x++){
-							if (dts.data[y * dts.step + x * dts.channels() + 2] > 0 ||
-								dts.data[y * dts.step + x * dts.channels() + 1] > 0 ||
-								dts.data[y * dts.step + x * dts.channels() + 0] > 0)
+					//検出範囲,個数探索処理開始
+					for (row = 0; row < dts.rows; row++){
+						for (col = 0; col < dts.cols; col++){
+
+							//if255が入っているか
+							if (dts.data[row * dts.step + col * dts.channels() + 2] == 0 &&
+								dts.data[row * dts.step + col * dts.channels() + 1] == 0 &&
+								dts.data[row * dts.step + col * dts.channels() + 0] == 255)
 							{
-								//モザイク描画範囲決定処理
-								if (max_x < x)max_x = x;
-								if (max_y < y)max_y = y;
-								if (min_x > x)min_x = x;
-								if (min_y > y)min_y = y;
+								dtr[dti].max_x = dtr[dti].max_y = 0;
+								dtr[dti].min_x = dts.cols - 1;
+								dtr[dti].min_y = dts.rows - 1;
+								x1 = col;
+								y1 = row;
+								while (1){//while1回抜けで1矩形終了
+									//モザイク描画範囲決定処理
+									if (dtr[dti].max_x < x1)dtr[dti].max_x = x1;
+									if (dtr[dti].max_y < y1)dtr[dti].max_y = y1;
+									if (dtr[dti].min_x > x1)dtr[dti].min_x = x1;
+									if (dtr[dti].min_y > y1)dtr[dti].min_y = y1;
 
-							}
-						}
-					}
-					//ifアクセス違反防止
-					if (dts.rows - max_y >= 10 && dts.rows - min_y >= 10 && dts.cols - max_x >= 10 && dts.cols - min_x >= 10){
-						for (y = min_y; y <= max_y; y += 10){
-							for (x = min_x; x <= max_x; x += 10){
-								for (j = y; j < y + 10; j++){
-									for (i = x; i < x + 10; i++){
-										//モザイク描画処理
-										dts.data[j * dts.step + i * dts.channels() + 2] =
-											ori2.data[y * ori2.step + x * ori2.channels() + 2];
-										dts.data[j * dts.step + i * dts.channels() + 1] =
-											ori2.data[y * ori2.step + x * ori2.channels() + 1];
-										dts.data[j * dts.step + i * dts.channels() + 0] =
-											ori2.data[y * ori2.step + x * ori2.channels() + 0];
+									//矩形の図形ラインをたどって範囲を探索,探索箇所を0に更新して255が無くなったら終わり
+									if (y1 - 1 >= 0 &&
+										dts.data[(y1 - 1) * dts.step + x1 * dts.channels() + 2] == 0 &&
+										dts.data[(y1 - 1) * dts.step + x1 * dts.channels() + 1] == 0 &&
+										dts.data[(y1 - 1) * dts.step + x1 * dts.channels() + 0] == 255)
+									{
+										dts.data[(y1 - 1) * dts.step + x1 * dts.channels() + 0] = 0;
+										y1 -= 1;
+										continue;
+									}
+
+									if (y1 + 1 < dts.rows &&
+										dts.data[(y1 + 1) * dts.step + x1 * dts.channels() + 2] == 0 &&
+										dts.data[(y1 + 1) * dts.step + x1 * dts.channels() + 1] == 0 &&
+										dts.data[(y1 + 1) * dts.step + x1 * dts.channels() + 0] == 255)
+									{
+										dts.data[(y1 + 1) * dts.step + x1 * dts.channels() + 0] = 0;
+										y1 += 1;
+										continue;
+									}
+
+									if (x1 - 1 >= 0 &&
+										dts.data[y1 * dts.step + (x1 - 1) * dts.channels() + 2] == 0 &&
+										dts.data[y1 * dts.step + (x1 - 1) * dts.channels() + 1] == 0 &&
+										dts.data[y1 * dts.step + (x1 - 1) * dts.channels() + 0] == 255)
+									{
+										dts.data[y1 * dts.step + (x1 - 1) * dts.channels() + 0] = 0;
+										x1 -= 1;
+										continue;
+									}
+
+									if (x1 + 1 < dts.cols &&
+										dts.data[y1 * dts.step + (x1 + 1) * dts.channels() + 2] == 0 &&
+										dts.data[y1 * dts.step + (x1 + 1) * dts.channels() + 1] == 0 &&
+										dts.data[y1 * dts.step + (x1 + 1) * dts.channels() + 0] == 255)
+									{
+										dts.data[y1 * dts.step + (x1 + 1) * dts.channels() + 0] = 0;
+										x1 += 1;
+										continue;
+									}
+									//矩形の図形ライン1ピクセル分終了
+
+									break;
+
+								}//while1回抜けで1矩形終了
+
+								//1矩形終了したので添え字1追加
+								dti++;
+								if (dti >= 200)break;//配列アクセス違反防止
+							}//if255が入っているか
+						}//for cols
+						if (dti >= 200){ dti = 200; break; }//配列アクセス違反防止
+					}//for rows
+					dtrp = dti;//検出個数代入
+					//検出範囲,個数探索処理終了
+
+					if (d_t->gfr == 7){
+						//検出箇所モザイク処理開始(1ループ1箇所)
+						for (dti = 0; dti < dtrp; dti++){
+							//ifアクセス違反防止
+							if (dts.rows - dtr[dti].max_y >= 10 && dts.rows - dtr[dti].min_y >= 10 &&
+								dts.cols - dtr[dti].max_x >= 10 && dts.cols - dtr[dti].min_x >= 10){
+								for (y = dtr[dti].min_y; y <= dtr[dti].max_y; y += 10){
+									for (x = dtr[dti].min_x; x <= dtr[dti].max_x; x += 10){
+										for (j = y; j < y + 10; j++){
+											for (i = x; i < x + 10; i++){
+												//モザイク描画処理
+												dts.data[j * dts.step + i * dts.channels() + 2] =
+													ori2.data[y * ori2.step + x * ori2.channels() + 2];
+												dts.data[j * dts.step + i * dts.channels() + 1] =
+													ori2.data[y * ori2.step + x * ori2.channels() + 1];
+												dts.data[j * dts.step + i * dts.channels() + 0] =
+													ori2.data[y * ori2.step + x * ori2.channels() + 0];
+
+											}
+										}
+									}
+								}//forここまで
+							}//ifアクセス違反防止
+						}//for dti
+						//検出箇所モザイク処理終了
+
+					}//if gfr == 7
+
+					if (d_t->gfr == 10){
+						//検出箇所すげ替え処理開始
+						for (dti = 0; dti < dtrp; dti++){
+
+							//入れ替え元画像サイズ決定
+							xs = dtr[dti].max_x - dtr[dti].min_x + 1;
+							ys = dtr[dti].max_y - dtr[dti].min_y + 1;
+							//入れ替え先画像サイズ決定
+							xrs = dtr[dtrp - dti - 1].max_x - dtr[dtrp - dti - 1].min_x + 1;
+							yrs = dtr[dtrp - dti - 1].max_y - dtr[dtrp - dti - 1].min_y + 1;
+
+							//ifアクセス違反防止
+							if (dts.rows > dtr[dti].min_y + ys &&
+								dts.cols > dtr[dti].min_x + xs &&
+								dts.rows > dtr[dtrp - dti - 1].min_y + yrs &&
+								dts.cols > dtr[dtrp - dti - 1].min_x + xrs){
+
+								for (y = 0; y < yrs; y++){
+									for (x = 0; x < xrs; x++){
+
+										dts.data[(y + dtr[dtrp - dti - 1].min_y) * dts.step +
+											(x + dtr[dtrp - dti - 1].min_x) * dts.channels() + 2] =
+											ori2.data[(y * ys / yrs + dtr[dti].min_y) * ori2.step +
+											(x * xs / xrs + dtr[dti].min_x) * ori2.channels() + 2];
+
+										dts.data[(y + dtr[dtrp - dti - 1].min_y) * dts.step +
+											(x + dtr[dtrp - dti - 1].min_x) * dts.channels() + 1] =
+											ori2.data[(y * ys / yrs + dtr[dti].min_y) * ori2.step +
+											(x * xs / xrs + dtr[dti].min_x) * ori2.channels() + 1];
+
+										dts.data[(y + dtr[dtrp - dti - 1].min_y) * dts.step +
+											(x + dtr[dtrp - dti - 1].min_x) * dts.channels() + 0] =
+											ori2.data[(y * ys / yrs + dtr[dti].min_y) * ori2.step +
+											(x * xs / xrs + dtr[dti].min_x) * ori2.channels() + 0];
 
 									}
 								}
-							}
-						}
-					}
-				}
-/*****************************************顔面モザイク処理終了***********************************************************/
-				p_t->lock_t = 1;                                //検索スレッドロック
-				if (p_t->lock == 1){p_t->lock_t = 0; continue;}//本スレロック時,検索スレッドロック解除後continue
-				p_t->mt_temp = dts.clone();                   //本スレデータ引き渡し.clone()完全コピー
-				p_t->lock_t = 0;                             //検索スレッドロック解除
-				p_t->th_st = 1;//スレッド進行状況(NULLによるエラー防止)
+							}//ifアクセス違反
+						}//for dti
+						//検出箇所すげ替え処理終了
+					}//if gfr == 10
+				}//gfr==7,10処理終了
+				/*****************************************顔面モザイク,顔すげ替え処理終了***********************************************************/
+				d_t->lock_t = 1;                                //検索スレッドロック
+				if (d_t->lock == 1){ d_t->lock_t = 0; continue; }//本スレロック時,検索スレッドロック解除後continue
+				d_t->mt_temp = dts.clone();                   //本スレデータ引き渡し.clone()完全コピー
+				d_t->lock_t = 0;                             //検索スレッドロック解除
+				d_t->th_st = 1;//スレッド進行状況(NULLによるエラー防止)
+				if (d_t->th_fin == 1)return 0;//スレッド抜け
 			}//while検出部
 		}
 		catch (...){
 			// "..." を指定すると try ブロック内で発生した全ての例外を捕捉します。このとき、例外を変数で受けることはできません。
 			continue;
 		}
-
+		if (d_t->th_fin == 1)return 0;//スレッド抜け
 	}//while(ずっとループしっぱなし)
 
 	return 0;

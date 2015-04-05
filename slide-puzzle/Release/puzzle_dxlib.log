@@ -1,0 +1,39 @@
+﻿2015/04/05 10:47:21 にビルドを開始しました。
+     1>ノード 2 上のプロジェクト "E:\情報処理技術者\基本情報技術者\VS Express 2013 for Desktop\VC_Projects\puzzle_dxlib_opencv_backup78(3d追加)\puzzle_dxlib.vcxproj" (Build ターゲット)。
+     1>ClCompile:
+         C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\CL.exe /c /I"E:\情報処理技術者\基本情報技術者\VS Express 2013 for Desktop\DxLib_VC\プロジェクトに追加すべきファイル_VC用" /I"E:\情報処理技術者\基本情報技術者\VS Express 2013 for Desktop\カメラライブラリ" /I"C:\opencv-2.4.9\build\include\opencv" /I"C:\opencv-2.4.9\build\include" /I"C:\Program Files (x86)\Windows Kits\8.1\Include" /Zi /nologo /W3 /WX- /sdl /O2 /Oi /Oy- /GL /D WIN32 /D NDEBUG /D _WINDOWS /D _MBCS /Gm- /EHsc /MT /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Fo"Release\\" /Fd"Release\vc120.pdb" /Gd /TP /analyze- /errorReport:prompt ImageDraw_draw.cpp
+         ImageDraw_draw.cpp
+         To compile qedit.h you must install the DirectX 9 SDK, to obtain the dxtrans.h header.
+     1>ImageDraw_draw.cpp(239): warning C4244: '=' : 'double' から 'float' への変換です。データが失われる可能性があります。
+     1>ImageDraw_draw.cpp(240): warning C4244: '=' : 'double' から 'float' への変換です。データが失われる可能性があります。
+     1>ImageDraw_draw.cpp(254): warning C4244: '引数' : 'double' から 'int' への変換です。データが失われる可能性があります。
+     1>ImageDraw_draw.cpp(259): warning C4244: '=' : 'double' から 'int' への変換です。データが失われる可能性があります。
+     1>ImageDraw_draw.cpp(261): warning C4244: '引数' : 'double' から 'int' への変換です。データが失われる可能性があります。
+     1>ImageDraw_draw.cpp(268): warning C4244: '引数' : 'double' から 'int' への変換です。データが失われる可能性があります。
+     1>ImageDraw_draw.cpp(272): warning C4244: '=' : 'double' から 'int' への変換です。データが失われる可能性があります。
+     1>ImageDraw_draw.cpp(275): warning C4244: '引数' : 'double' から 'int' への変換です。データが失われる可能性があります。
+     1>ImageDraw_draw.cpp(371): warning C4244: '引数' : 'int' から 'float' への変換です。データが失われる可能性があります。
+     1>ImageDraw_draw.cpp(373): warning C4244: '引数' : 'int' から 'float' への変換です。データが失われる可能性があります。
+       Link:
+         C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\link.exe /ERRORREPORT:PROMPT /OUT:"E:\情報処理技術者\基本情報技術者\VS Express 2013 for Desktop\VC_Projects\puzzle_dxlib_opencv_backup78(3d追加)\Release\puzzle_dxlib.exe" /INCREMENTAL:NO /NOLOGO /LIBPATH:"E:\情報処理技術者\基本情報技術者\VS Express 2013 for Desktop\DxLib_VC\プロジェクトに追加すべきファイル_VC用" /LIBPATH:"E:\情報処理技術者\基本情報技術者\VS Express 2013 for Desktop\カメラライブラリ" /LIBPATH:"C:\opencv-2.4.9\build\x86\vc12\lib" /LIBPATH:"C:\Program Files (x86)\Windows Kits\8.1\Lib" opencv_core249.lib opencv_imgproc249.lib opencv_highgui249.lib opencv_video249.lib strmiids.lib quartz.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"E:\情報処理技術者\基本情報技術者\VS Express 2013 for Desktop\VC_Projects\puzzle_dxlib_opencv_backup78(3d追加)\Release\puzzle_dxlib.pdb" /SUBSYSTEM:WINDOWS /OPT:REF /OPT:ICF /LTCG /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"E:\情報処理技術者\基本情報技術者\VS Express 2013 for Desktop\VC_Projects\puzzle_dxlib_opencv_backup78(3d追加)\Release\puzzle_dxlib.lib" /MACHINE:X86 /SAFESEH:NO Release\ImageDraw_draw.obj
+         Release\Filter_filter.obj
+         Release\ImageRead_ImageRead.obj
+         Release\Move_auto_matic.obj
+         Release\back_image.obj
+         Release\Move_change.obj
+         Release\face_detect.obj
+         Release\File_file.obj
+         Release\ImageRead_drawing_img.obj
+         Release\Menu_mouse.obj
+         Release\Move_mov.obj
+         Release\ImageRead_pic_resize.obj
+         Release\puzzle_main.obj
+         Release\sound.obj
+         コード生成しています。
+         コード生成が終了しました。
+         puzzle_dxlib.vcxproj -> E:\情報処理技術者\基本情報技術者\VS Express 2013 for Desktop\VC_Projects\puzzle_dxlib_opencv_backup78(3d追加)\Release\puzzle_dxlib.exe
+     1>プロジェクト "E:\情報処理技術者\基本情報技術者\VS Express 2013 for Desktop\VC_Projects\puzzle_dxlib_opencv_backup78(3d追加)\puzzle_dxlib.vcxproj" (Build ターゲット) のビルドが完了しました。
+
+ビルドに成功しました。
+
+経過時間 00:00:04.34

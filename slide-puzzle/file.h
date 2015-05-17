@@ -21,7 +21,7 @@ private:
 	
 public:
 	File();                                //コンストラクタ
-	char *file();                         //基本画像選択用
+	char *file(Dx9Init *dx, MSG *msg);    //基本画像選択用
 	char *e_file(ImageDraw *draw, int f);//画像エンボス用
 
 };

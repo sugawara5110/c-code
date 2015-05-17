@@ -5,9 +5,11 @@
 //*****************************************************************************************//
 
 #define _CRT_SECURE_NO_WARNINGS
-#include "DxLib.h"
+#include <windows.h>
+#include <d3d9.h>
+#include <d3dx9.h>
+#include "Dx9Init.h"
 #include <string.h>
-#include "sound.h"
 #include "ImageRead.h"
 #include "ImageDraw.h"
 #include "Menu.h"
@@ -51,71 +53,97 @@ File::File(){
 
 	} while (FindNextFile(hFile, &fd) && i < 256);//次のファイルのアドレス
 	FindClose(hFile);                 //クローズ
-
+	
 	k = i - 1;
 	i = i1 = 1;
 
 }
 
-char* File::file(){ //画像ファイル選択関数
+char* File::file(Dx9Init *dx, MSG *msg){ //画像ファイル選択関数
 
-	int x, frg;
+	int x, flg;
 	Menu menu;        //メニューオブジェクト生成
 	ImageDraw *fdraw;//ファイル関数用
 
-	x = 800;
-	frg = 1;
+	x = 1600;
+	flg = 1;
 	while (1){
-		fdraw = new ImageDraw(f_name_tbl[i]);//ファイル関数用オブジェクト生成
+		fdraw = new ImageDraw(dx, f_name_tbl[i]);//ファイル関数用オブジェクト生成
 
-		fdraw->drawing_img(NULL, NULL, x, 0, 1);//動画像描画関数
-		if (ProcessMessage() == -1){ InitSoftImage(); DxLib_End(); exit(0); }//強制終了
-		if (frg != 0){
-			sound(2);//サウンド関数ブロック移動音
-			while (ScreenFlip() == 0 && x != 0){
-				if (ProcessMessage() == -1){ InitSoftImage(); DxLib_End(); exit(0); }//強制終了
-				fdraw->drawing_img(NULL, NULL, x, 0, 0);
-				menu.mouse(NULL, 1, 0); //マウス関数
-				if (frg == 1)x -= 10;
-				if (frg == 2)x += 10;
+		if (fdraw->drawing_img(dx, NULL, NULL, x, 0, 0, 1) == -1) return "stop";//動画像描画関数
+
+		if (PeekMessage(msg, NULL, 0, 0, PM_REMOVE)) {
+			if (msg->message == WM_QUIT) {	// PostQuitMessage()が呼ばれた
+				delete fdraw;
+				return "stop";
+			}
+			else {
+				// メッセージの翻訳とディスパッチ
+				TranslateMessage(msg);
+				DispatchMessage(msg);
+			}
+		}
+
+		if (flg != 0){
+			while (x != 0){
+
+				dx->drawscreen();//描画
+
+				if (fdraw->drawing_img(dx, NULL, NULL, x, 0, 0, 0) == -1) return "stop";
+				menu.mouse(dx, NULL, 1, 0); //マウス関数
+				if (flg == 1)x -= 20;
+				if (flg == 2)x += 20;
 			} //while終わり
 
 		} //if終わり
 
 		do{
-			if (ProcessMessage() == -1){ InitSoftImage(); DxLib_End(); exit(0); }//強制終了
-			fdraw->drawing_img(NULL, NULL, x, 0, 0);
-			frg = menu.mouse(NULL, 1, 0); //マウス関数
-			ScreenFlip();
-			if (frg == 3){
-				sound(1);        //サウンド関数ボタン音
-				InitSoftImage();//ソフトイメージ全開放
+			if (PeekMessage(msg, NULL, 0, 0, PM_REMOVE)) {
+				if (msg->message == WM_QUIT) {	// PostQuitMessage()が呼ばれた
+					delete fdraw;
+					return "stop";
+				}
+				else {
+					// メッセージの翻訳とディスパッチ
+					TranslateMessage(msg);
+					DispatchMessage(msg);
+				}
+			}
+
+			if (fdraw->drawing_img(dx, NULL, NULL, x, 0, 0, 0) == -1) return "stop";
+			flg = menu.mouse(dx, NULL, 1, 0); //マウス関数
+
+			dx->drawscreen();//描画
+
+			if (flg == 3){
+
 				delete fdraw;         //終わったので破棄
 				return f_name_tbl[i];//ファイル名決定関数抜け 
 			}
 
-		} while (frg == 0);//do～while終了
+		} while (flg == 0);//do～while終了
 
-		if (frg != 0){
-			sound(2);//サウンド関数ブロック移動音
-			while (ScreenFlip() == 0 && x >= -800 && x < 800){
-				if (ProcessMessage() == -1){ InitSoftImage(); DxLib_End(); exit(1); }//強制終了
-				fdraw->drawing_img(NULL, NULL, x, 0, 0);
-				menu.mouse(NULL, 1, 0); //マウス関数
-				if (frg == 1)x -= 10;
-				if (frg == 2)x += 10;
+		if (flg != 0){
+			while (x >= -1600 && x < 1600){
+
+				dx->drawscreen();//描画
+
+				if (fdraw->drawing_img(dx, NULL, NULL, x, 0, 0, 0) == -1) return "stop";
+				menu.mouse(dx, NULL, 1, 0); //マウス関数
+				if (flg == 1)x -= 20;
+				if (flg == 2)x += 20;
 
 			} //while終わり
-			if (frg == 1)i = i%k + 1;
-			if (frg == 2){ i = i - 1; if (i == 0)i = k; }
+			if (flg == 1)i = i%k + 1;
+			if (flg == 2){ i = i - 1; if (i == 0)i = k; }
 
 		} //if終わり
-		if (frg == 1)x = 800;
-		if (frg == 2)x = -800;
+		if (flg == 1)x = 1600;
+		if (flg == 2)x = -1600;
 		delete fdraw;//次の画像に切り替わるので破棄
 	}//while終わり
 
-} //file()終わり
+}//file()終わり
 
 char* File::e_file(ImageDraw *draw, int f){
 

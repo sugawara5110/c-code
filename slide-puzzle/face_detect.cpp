@@ -4,7 +4,6 @@
 //**                                                                                     **//
 //*****************************************************************************************//
 
-#include "DxLib.h"
 #include <process.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/opencv_lib.hpp>
@@ -24,8 +23,7 @@ unsigned __stdcall face_detect(void *th){
 	cv::VideoCapture video;        //検出スレッド動画再生ハンドル
 	cv::Mat ori, ori2;
 	cv::Mat dts;
-	cv::Mat grayImage;         //検出用グレースケールデータ格納用
-	REFTIME time1;            //本スレッドと同期取り用変数
+	cv::Mat grayImage;        //検出用グレースケールデータ格納用
 	int x, y, i, j, x1, y1;  //for
 
 	typedef struct{
@@ -66,8 +64,8 @@ unsigned __stdcall face_detect(void *th){
 						video.open(d_t->g_name);  //動画ファイルopen
 					}
 
-					d_t->pMediaPosition->get_CurrentPosition(&time1);//再生位置取得(秒)
-					video.set(CV_CAP_PROP_POS_MSEC, time1 * 1000);//映像同期(こっちはミリ秒単位なので1000かける)
+					//映像同期(取得先は秒単位,こっちはミリ秒単位なので1000かける)
+					video.set(CV_CAP_PROP_POS_MSEC, d_t->time1 * 1000);
 					video >> ori;                         //フレーム読み込み
 					if (ori.empty()){                    //フレームが空か？	
 						video.release();

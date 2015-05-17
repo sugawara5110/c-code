@@ -14,18 +14,23 @@ class ImageDraw;//前方宣言(プロトタイプ宣言みたいなもん)
 class Move{
 
 private://非公開部
-	int auto_space_mov(Filter *filter, ImageDraw *draw, int *cnt, int *x, int *y);             //ブロック自動移動
-	int auto_round(Filter *filter, ImageDraw *draw, int *cnt, int *x, int *y, int cx, int cy);//ブロック自動移動
+	int br; //アプリ終了用
+
+	int auto_space_mov(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw, int *cnt, int *x, int *y);             //ブロック自動移動
+	int auto_round(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw, int *cnt, int *x, int *y, int cx, int cy);//ブロック自動移動
+	int change(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw);                                             //ブロック交換
 
 public://公開部
 	typedef struct {
-		int cx;              //現画像x座標
-		int cy;             //現画像y座標
+		int cx;               //現画像x座標
+		int cy;              //現画像y座標
+		int cz;             //現画像z座標
 		int fx;            //完成画像x座標
 		int fy;           //完成画像y座標
 		int chx;         //change関数用x座標
 		int chy;        //change関数用y座標
-	} imxy;            //画像座標構造体img
+		int chz;       //change関数用z座標 
+	} imxy;           //画像座標構造体img
 
 	typedef struct {
 		int idx;                //img 添え字
@@ -50,10 +55,13 @@ public://公開部
 	int cnt_results;    //auto_matic関数のカウント結果
 
 	Move();//コンストラクタ
-	int mov(Filter *filter, ImageDraw *draw, int *cnt, int frg, int autof);//ブロック手動移動
-	void auto_matic(Filter *filter, ImageDraw *draw, int *cnt, int pcs, int range, int j);//ブロック自動移動
-	int change(Filter *filter, ImageDraw *draw);//ブロック交換
-    void shuffle();//シャッフル
+	void coordinates(int si);//座標初期化
+	int mov(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw, int *cnt, int flg, int autof);//ブロック手動移動
+	int auto_matic(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw, int *cnt, int pcs, int range, int j);//ブロック自動移動
+	int count(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw, int *cnt, int pcs, int range, int j);    //手数計算
+	int shuffle(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw);  //シャッフル
+	int recovery(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw);//元通り
+	~Move();//デストラクタ
 
 };
 

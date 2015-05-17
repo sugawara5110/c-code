@@ -4,7 +4,10 @@
 //**                                    (ImageReadの派生クラス)                          **//
 //*****************************************************************************************//
 
-#include "DxLib.h"
+#include <windows.h>
+#include <d3d9.h>
+#include <d3dx9.h>
+#include "Dx9Init.h"
 #include <math.h>
 #include "back_image.h"
 #include "Move.h"
@@ -12,9 +15,13 @@
 #include "ImageDraw.h" 
 #include "Filter.h"
 
-void ImageDraw::draw(Filter *filter, Move *move, int x, int y){//画像変換,描画処理  drawing_img内から呼び出される(オーバーライド)
+// 頂点データのＦＶＦフォーマットの設定
+#define MY_VERTEX_FVF  (D3DFVF_XYZ | D3DFVF_DIFFUSE )
+#define MY_VERTEX_FVF2 ( D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1)
 
-	int i, j, k, i1, j1; //for
+HRESULT ImageDraw::draw(Dx9Init *dx, Filter *filter, Move *move, int x, int y, int z){//画像変換,描画処理  drawing_img内から呼び出される(オーバーライド)
+
+	int i, j, k, k1, i1, j1;//for
 	int r, g, b;        //色
 	int **pi16;        //エッジ,エンボス処理一時保管用
 	int mono;         //モノクロ用
@@ -26,19 +33,93 @@ void ImageDraw::draw(Filter *filter, Move *move, int x, int y){//画像変換,描画処
 		int bp; //青の数
 	}his;
 	static his hist[128]; //ヒストグラム各色の各階調数(2階調分で1個)
-	int xx, yy;          //完成前,完成後のパズル画像オフセット
+	int xx, yy, zz;      //完成前,完成後のパズル画像オフセット
 	static int ff = 0;  //完成状態  0:完成  1:未完成
 	int ffr = 1;       //完成状態履歴 0:更新無し 1:更新直後
-	int d3_im, d3_z;  //3D用一時格納用
+	DWORD cl;         //1ピクセル色一時保管
+	float i2, j2, z2;//1ピクセル座標一時保管
+	float pz;       //1ピクセルのZ座標
 
+	// ビューポートと深度バッファのクリアとステンシルバッファの削除
+	if (FAILED(dx->pD3DDevice->Clear(0, NULL,   // クリアする領域は全面
+		D3DCLEAR_TARGET |			// バックバッファを指定
+		D3DCLEAR_ZBUFFER, 		   // 深度バッファ（Zバッファ）を指定
+		D3DCOLOR_XRGB(0, 0, 255), // クリアする色
+		1.0f, 					 // クリアする深度バッファ（Zバッファ）の値
+		0)))				    // クリアするステンシルバッファの値
+	{
+		return E_FAIL;
+	}
+
+	//カメラ位置更新
+	cpx = xrs * 0.5f + sin(theta_lr * 3.14f / 180.0f) * 750.0f;
+	cpz = -cos(theta_lr * 3.14f / 180.0f) * 750.0f;
+
+	// カメラの位置と方向を設定
+	D3DXMatrixLookAtLH(&m_view,
+		&D3DXVECTOR3(cpx, yrs * 0.5f, cpz),          //カメラの位置
+		&D3DXVECTOR3(xrs * 0.5f, yrs * 0.5f, 0.0f),//カメラの方向を向ける点
+		&D3DXVECTOR3(0.0f, 1.0f, 0.0f));          //カメラの上の方向
+
+	if (d3 == 1)img_a = (MY_VERTEX*)malloc(sizeof(MY_VERTEX) * yrs * xrs * 4);//パズル画像頂点配列確保(通常)
+	else img_a = (MY_VERTEX*)malloc(sizeof(MY_VERTEX) * yrs * xrs * 8);      //パズル画像頂点配列確保(Z方向分で*2)
 	if (move == NULL) {//NULLの場合画像処理無し描画
-		back_image(1);
+		back_image(dx, 1);
+		k1 = 0;
 		for (j = 0; j < yrs; j++){
 			for (i = 0; i < xrs; i++){
-				DrawPixel(i + (800 - xrs) / 2 + x, j + (600 - yrs) / 2, imgpi[j][i]);
+				cl = D3DXCOLOR((float)(imgpi[j][i] >> 16 & 0xff) / 255, (float)(imgpi[j][i] >> 8 & 0xff) / 255, (float)(imgpi[j][i] & 0xff) / 255, 1.0f);
+				if (d3 == 1 || d3 == 2)pz = 20.0f;
+				if (d3 == 3)pz = ((imgpi[j][i] >> 16 & 0xff) + (imgpi[j][i] >> 8 & 0xff) + (imgpi[j][i] & 0xff)) / 9.0f;//Z方向色情報による
+				img_a[k1].p = D3DXVECTOR3((float)i + x, (float)j, pz);
+				img_a[k1++].color = cl;
+				if (d3 != 1){
+					img_a[k1].p = D3DXVECTOR3((float)i + x, (float)j, -pz - 30.0f);
+					img_a[k1++].color = cl;
+				}
+				//ピクセル間隙間埋め
+				img_a[k1].p = D3DXVECTOR3((float)i + x, (float)j + 0.5f, pz);
+				img_a[k1++].color = cl;
+				if (d3 != 1){
+					img_a[k1].p = D3DXVECTOR3((float)i + x, (float)j + 0.5f, -pz - 30.0f);
+					img_a[k1++].color = cl;
+				}
+				img_a[k1].p = D3DXVECTOR3((float)i + 0.5f + x, (float)j + 0.5f, pz);
+				img_a[k1++].color = cl;
+				if (d3 != 1){
+					img_a[k1].p = D3DXVECTOR3((float)i + 0.5f + x, (float)j + 0.5f, -pz - 30.0f);
+					img_a[k1++].color = cl;
+				}
+				img_a[k1].p = D3DXVECTOR3((float)i + 0.5f + x, (float)j, pz);
+				img_a[k1++].color = cl;
+				if (d3 != 1){
+					img_a[k1].p = D3DXVECTOR3((float)i + 0.5f + x, (float)j, -pz - 30.0f);
+					img_a[k1++].color = cl;
+				}
 			}
 		}
-		return;
+		pMyVB->Lock(0, 0, (void**)&img_p, 0);
+		if (d3 == 1)memcpy(img_p, img_a, sizeof(MY_VERTEX) * yrs * xrs * 4);
+		else memcpy(img_p, img_a, sizeof(MY_VERTEX) * yrs * xrs * 8);
+		pMyVB->Unlock();
+		dx->pD3DDevice->BeginScene();// 描画開始宣言
+		// 頂点バッファーをレンダリングパイプラインに設定
+		dx->pD3DDevice->SetStreamSource(0, pMyVB, 0, sizeof(MY_VERTEX));
+
+		// マトリックスをレンダリングパイプラインに設定
+		dx->pD3DDevice->SetTransform(D3DTS_VIEW, &m_view);
+
+		//テクスチャー
+		dx->pD3DDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_DISABLE);
+		// 頂点データのＦＶＦフォーマットを設定
+		dx->pD3DDevice->SetFVF(MY_VERTEX_FVF);
+
+		// 描画
+		if (d3 == 1)dx->pD3DDevice->DrawPrimitive(D3DPT_POINTLIST, 0, yrs * xrs * 4);
+		else dx->pD3DDevice->DrawPrimitive(D3DPT_LINELIST, 0, yrs * xrs * 8);
+		dx->pD3DDevice->EndScene();// 描画終了宣言
+		free(img_a);     //頂点配列解放
+		return S_OK;
 	}//ファイル関数実行時のみ処理終了
 
 	/********************************************************************************************************************************/
@@ -88,7 +169,7 @@ void ImageDraw::draw(Filter *filter, Move *move, int x, int y){//画像変換,描画処
 		if (d.gfr == 3 || d.gfr == 4 || d.gfr == 9) {//エッジ検出,エンボス,画像エンボス後処理
 
 			if (d.gfr == 9){    //画像エンボス用画像更新,音量調整
-                read->drawing_img(NULL, NULL, 0, 0, 0); //画像更新
+				read->drawing_img(dx, NULL, NULL, 0, 0, 0, 0); //画像更新
 				if (read->d.mcf == 1)read->pBasicAudio->put_Volume(-2000);//音量調整,動画以外だとまだグラフ未生成
 			}
 
@@ -234,54 +315,164 @@ void ImageDraw::draw(Filter *filter, Move *move, int x, int y){//画像変換,描画処
 	Move::para *prs = &move->paras[move->size];
 	Move::imxy *img = move->img;
 
-	if (d.d3f == 1 || d.d3f == 2){
-		//カメラ位置更新
-		CameraPos.x = 400.0f + sin(d.theta_lr * 3.14 / 180) * 550;
-		CameraPos.z = -550.0f + 550 - cos(d.theta_lr * 3.14 / 180) * 550;
-
-		// カメラの位置と注視点をセット
-		SetCameraPositionAndTarget_UpVecY(CameraPos, VGet(400.0f, 250.0f, 0.0f));
-	}
-
 	//↓毎回実行する処理(ファイル関数以外)
-	ClearDrawScreen();  //画面消去
-	back_image(1);     //背景描画関数,引数1==画像描画
+	back_image(dx, 1);     //背景描画関数,引数1==画像描画
+	k1 = 0;
 	//パズル部以外の画像描画左側
 	for (j = 0; j < 400; j++){
 		for (i = 0; i < (xrs - 400) * 0.5; i++){
 			//ifエッジ検出時の背景色描画スキップ処理以下同じ処理有り
 			if (d.gfr == 3 && imgpi[j][i] == 0)continue;
-			DrawPixel(i + (800 - xrs) * 0.5 + 1, j + 100, imgpi[j][i]);//+1は補正
+			cl = D3DXCOLOR((float)(imgpi[j][i] >> 16 & 0xff) / 255, (float)(imgpi[j][i] >> 8 & 0xff) / 255, (float)(imgpi[j][i] & 0xff) / 255, 1.0f);
+			if (d3 == 1 || d3 == 2)pz = 20.0f;
+			if (d3 == 3)pz = ((imgpi[j][i] >> 16 & 0xff) + (imgpi[j][i] >> 8 & 0xff) + (imgpi[j][i] & 0xff)) / 9.0f;//Z方向色情報による
+			img_a[k1].p = D3DXVECTOR3((float)i, (float)j, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i, (float)j, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			//ピクセル間隙間埋め
+			img_a[k1].p = D3DXVECTOR3((float)i, (float)j + 0.5f, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i, (float)j + 0.5f, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j + 0.5f, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j + 0.5f, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
 		}
 	}
-	//パズル部以外の画像描画右側
+	//パズル部以外の画像頂点右側
 	for (j = 0; j < 400; j++){
-		for (i = xrs - (xrs - 400) * 0.5; i < xrs; i++){
+		for (i = xrs - (int)((xrs - 400) * 0.5); i < xrs; i++){
 			if (d.gfr == 3 && imgpi[j][i] == 0)continue;
-			DrawPixel(i + (800 - xrs) * 0.5 - 1, j + 100, imgpi[j][i]);
+			cl = D3DXCOLOR((float)(imgpi[j][i] >> 16 & 0xff) / 255, (float)(imgpi[j][i] >> 8 & 0xff) / 255, (float)(imgpi[j][i] & 0xff) / 255, 1.0f);
+			if (d3 == 1 || d3 == 2)pz = 20.0f;
+			if (d3 == 3)pz = ((imgpi[j][i] >> 16 & 0xff) + (imgpi[j][i] >> 8 & 0xff) + (imgpi[j][i] & 0xff)) / 9.0f;//Z方向色情報による
+			img_a[k1].p = D3DXVECTOR3((float)i, (float)j, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i, (float)j, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			//ピクセル間隙間埋め
+			img_a[k1].p = D3DXVECTOR3((float)i, (float)j + 0.5f, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i, (float)j + 0.5f, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j + 0.5f, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j + 0.5f, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
 		}
 	}
-	//パズル部以外の画像描画上側
+	//パズル部以外の画像頂点上側
 	for (j = 0; j < (yrs - 400) * 0.5; j++){
 		for (i = 0; i < 400; i++){
 			if (d.gfr == 3 && imgpi[j][i] == 0)continue;
-			DrawPixel(i + 200, j + (600 - yrs) * 0.5, imgpi[j][i]);
+			cl = D3DXCOLOR((float)(imgpi[j][i] >> 16 & 0xff) / 255, (float)(imgpi[j][i] >> 8 & 0xff) / 255, (float)(imgpi[j][i] & 0xff) / 255, 1.0f);
+			if (d3 == 1 || d3 == 2)pz = 20.0f;
+			if (d3 == 3)pz = ((imgpi[j][i] >> 16 & 0xff) + (imgpi[j][i] >> 8 & 0xff) + (imgpi[j][i] & 0xff)) / 9.0f;//Z方向色情報による
+			img_a[k1].p = D3DXVECTOR3((float)i, (float)j, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i, (float)j, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			//ピクセル間隙間埋め
+			img_a[k1].p = D3DXVECTOR3((float)i, (float)j + 0.5f, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i, (float)j + 0.5f, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j + 0.5f, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j + 0.5f, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
 		}
 	}
-	//パズル部以外の画像描画下側
-	for (j = yrs - (yrs - 400) * 0.5; j < yrs; j++){
+	//パズル部以外の画像頂点下側
+	for (j = yrs - (int)((yrs - 400) * 0.5); j < yrs; j++){
 		for (i = 0; i < 400; i++){
 			if (d.gfr == 3 && imgpi[j][i] == 0)continue;
-			DrawPixel(i + 200, j + (600 - yrs) * 0.5, imgpi[j][i]);
+			cl = D3DXCOLOR((float)(imgpi[j][i] >> 16 & 0xff) / 255, (float)(imgpi[j][i] >> 8 & 0xff) / 255, (float)(imgpi[j][i] & 0xff) / 255, 1.0f);
+			if (d3 == 1 || d3 == 2)pz = 20.0f;
+			if (d3 == 3)pz = ((imgpi[j][i] >> 16 & 0xff) + (imgpi[j][i] >> 8 & 0xff) + (imgpi[j][i] & 0xff)) / 9.0f;//Z方向色情報による
+			img_a[k1].p = D3DXVECTOR3((float)i, (float)j, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i, (float)j, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			//ピクセル間隙間埋め
+			img_a[k1].p = D3DXVECTOR3((float)i, (float)j + 0.5f, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i, (float)j + 0.5f, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j + 0.5f, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j + 0.5f, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
+			img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j, pz);
+			img_a[k1++].color = cl;
+			if (d3 != 1){
+				img_a[k1].p = D3DXVECTOR3((float)i + 0.5f, (float)j, -pz - 15.0f);
+				img_a[k1++].color = cl;
+			}
 		}
 	}
-	//パズル間の画像描画
+	//パズル間の画像頂点
 	if (move->size != 5){//size5は処理しない
 		for (j = 0; j < 400; j++){
 			for (i = 0; i < 400; i++){
 				if (d.gfr == 3 && imgpi[j + (yrs - 400) / 2][i + (xrs - 400) / 2] == 0)continue;
 				if (filter->block[j][i] == 150 || filter->block[j][i] == 1){//フィルター値150,1のみ描画
-					DrawPixel(i + 200, j + 100, imcpy[j + (yrs - 400) / 2][i + (xrs - 400) / 2]);
+					if (d3 == 1 || d3 == 2)pz = 20.0f;
+					if (d3 == 3)pz = ((imgpi[j][i] >> 16 & 0xff) + (imgpi[j][i] >> 8 & 0xff) + (imgpi[j][i] & 0xff)) / 9.0f;//Z方向色情報による
+					img_a[k1].p = D3DXVECTOR3((float)i + (xrs - 400) * 0.5f, (float)j + (yrs - 400) * 0.5f, pz);
+					img_a[k1++].color = D3DXCOLOR((float)(imcpy[j + (yrs - 400) / 2][i + (xrs - 400) / 2] >> 16 & 0xff) / 255,
+						(float)(imcpy[j + (yrs - 400) / 2][i + (xrs - 400) / 2] >> 8 & 0xff) / 255,
+						(float)(imcpy[j + (yrs - 400) / 2][i + (xrs - 400) / 2] & 0xff) / 255, 1.0f);
+					if (d3 != 1){
+						img_a[k1].p = D3DXVECTOR3((float)i + (xrs - 400) * 0.5f, (float)j + (yrs - 400) * 0.5f, -pz - 15.0f);
+						img_a[k1++].color = D3DXCOLOR((float)(imcpy[j + (yrs - 400) / 2][i + (xrs - 400) / 2] >> 16 & 0xff) / 255,
+							(float)(imcpy[j + (yrs - 400) / 2][i + (xrs - 400) / 2] >> 8 & 0xff) / 255,
+							(float)(imcpy[j + (yrs - 400) / 2][i + (xrs - 400) / 2] & 0xff) / 255, 1.0f);
+					}
 				}
 			}
 		}
@@ -313,7 +504,7 @@ void ImageDraw::draw(Filter *filter, Move *move, int x, int y){//画像変換,描画処
 				if (r <= 0)r = 1;
 				if (g <= 0)g = 1;
 				if (b <= 0)b = 1;
-				imgpi[j + (yrs - 400) / 2][i + (xrs - 400) / 2] = GetColor(r, g, b);//色代入
+				imgpi[j + (yrs - 400) / 2][i + (xrs - 400) / 2] = (r << 16) + (g << 8) + b;//色代入
 			}
 		}
 	}//ブロック画像処理終わり
@@ -328,109 +519,158 @@ void ImageDraw::draw(Filter *filter, Move *move, int x, int y){//画像変換,描画処
 		}
 	}
 
+	if (ff == 0){ xx = 0; yy = 0, zz = 0; }//完成状態でオフセット量更新
+	else{ xx = 19; yy = 19, zz = -57; }
+
+	//パズル部画像頂点処理開始
+	for (k = 0; k < prs->idx; k++){
+		for (j = 0; j < prs->bsize; j++){     //1ブロック内y方向
+			for (i = 0; i < prs->bsize; i++){//1ブロック内x方向
+
+				//エッジ検出処理
+				if (d.gfr == 3 && imgpi[j + img[k].fy + (yrs - 400) / 2]
+					[i + img[k].fx + (xrs - 400) / 2] == 0)continue;
+
+				//ブロック間は描画しない(フィルター値150,1 size==5)
+				if ((filter->block[j + img[k].fy][i + img[k].fx] == 150 ||
+					filter->block[j + img[k].fy][i + img[k].fx] == 1) &&
+					move->size != 5)continue;
+
+				//通常表示,表示座標位置＋オフセット, 表示色情報(完成座標位置－オフセット)
+				cl = D3DXCOLOR((float)(imgpi[j + img[k].fy + (yrs - 400) / 2][i + img[k].fx + (xrs - 400) / 2] >> 16 & 0xff) / 255,
+					(float)(imgpi[j + img[k].fy + (yrs - 400) / 2][i + img[k].fx + (xrs - 400) / 2] >> 8 & 0xff) / 255,
+					(float)(imgpi[j + img[k].fy + (yrs - 400) / 2][i + img[k].fx + (xrs - 400) / 2] & 0xff) / 255, 1.0f);
+
+				j2 = (float)j + img[k].cy + (yrs - 400) * 0.5f + yy + y, 0.0f;
+				i2 = (float)i + img[k].cx + (xrs - 400) * 0.5f + xx + x;
+				z2 = (float)img[k].cz + zz + z;
+
+				if (d3 == 1 || d3 == 2)pz = 20.0f;
+				if (d3 == 3)pz = ((imgpi[j][i] >> 16 & 0xff) + (imgpi[j][i] >> 8 & 0xff) + (imgpi[j][i] & 0xff)) / 9.0f;//Z方向色情報による
+
+				img_a[k1].p = D3DXVECTOR3((float)i2, (float)j2, pz + z2);
+				img_a[k1++].color = cl;
+				if (d3 != 1){
+					img_a[k1].p = D3DXVECTOR3((float)i2, (float)j2, -pz - 15.0f + z2);
+					img_a[k1++].color = cl;
+				}
+
+				//ピクセル間隙間埋め
+				if (i + 1 == prs->bsize && j + 1 != prs->bsize){
+					img_a[k1].p = D3DXVECTOR3((float)i2, (float)j2 + 0.5f, pz + z2);
+					img_a[k1++].color = cl;
+					if (d3 != 1){
+						img_a[k1].p = D3DXVECTOR3((float)i2, (float)j2 + 0.5f, -pz - 15.0f + z2);
+						img_a[k1++].color = cl;
+					}
+				}
+
+				if (i + 1 != prs->bsize && j + 1 != prs->bsize){
+					img_a[k1].p = D3DXVECTOR3((float)i2 + 0.5f, (float)j2 + 0.5f, pz + z2);
+					img_a[k1++].color = cl;
+					if (d3 != 1){
+						img_a[k1].p = D3DXVECTOR3((float)i2 + 0.5f, (float)j2 + 0.5f, -pz - 15.0f + z2);
+						img_a[k1++].color = cl;
+					}
+				}
+
+				if (i + 1 != prs->bsize && j + 1 == prs->bsize){
+					img_a[k1].p = D3DXVECTOR3((float)i2 + 0.5f, (float)j2, pz + z2);
+					img_a[k1++].color = cl;
+					if (d3 != 1){
+						img_a[k1].p = D3DXVECTOR3((float)i2 + 0.5f, (float)j2, -pz - 15.0f + z2);
+						img_a[k1++].color = cl;
+					}
+				}
+			}
+		}
+	}//パズル部画像頂点処理終わり
+	pMyVB->Lock(0, 0, (void**)&img_p, 0);
+	if (d3 == 1)memcpy(img_p, img_a, sizeof(MY_VERTEX) * yrs * xrs * 4);
+	else memcpy(img_p, img_a, sizeof(MY_VERTEX) * yrs * xrs * 8);
+	pMyVB->Unlock();
+	dx->pD3DDevice->BeginScene();// 描画開始宣言
+	// 頂点バッファーをレンダリングパイプラインに設定
+	dx->pD3DDevice->SetStreamSource(0, pMyVB, 0, sizeof(MY_VERTEX));
+
+	// マトリックスをレンダリングパイプラインに設定
+	dx->pD3DDevice->SetTransform(D3DTS_VIEW, &m_view);
+
+	//テクスチャー
+	dx->pD3DDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_DISABLE);
+
+	// 頂点データのＦＶＦフォーマットを設定
+	dx->pD3DDevice->SetFVF(MY_VERTEX_FVF);
+
+	// 描画
+	if (d3 == 1)dx->pD3DDevice->DrawPrimitive(D3DPT_POINTLIST, 0, yrs * xrs * 4);
+	else dx->pD3DDevice->DrawPrimitive(D3DPT_LINELIST, 0, yrs * xrs * 8);
+	dx->pD3DDevice->EndScene();// 描画終了宣言
+	free(img_a);    //頂点配列解放
+
 	//完成,未完成直後処理(再帰は1度だけ処理される)
 	if (ffr == 1){
 		if (ff == 0){//完成直後処理
 			for (i = 0; i < 19; i++){
-				drawing_img(filter, move, 19 - i, -19 + i, 0);//再帰
-				ScreenFlip();
+				drawing_img(dx, filter, move, 19 - i, 19 - i, -57 + i * 3, 0);//再帰
+				dx->drawscreen();//描画
 			}
 		}
 		if (ff == 1){//未完成直後処理
 			for (i = 0; i < 19; i++){
-				drawing_img(filter, move, i - 19, -i + 19, 0);//再帰(19はxx,yyの分の補正)
-				ScreenFlip();
+				drawing_img(dx, filter, move, i - 19, i - 19, 57 - i * 3, 0);//再帰(19はxx,yyの分の補正)
+				dx->drawscreen();//描画
 			}
 		}
 	}//完成,未完成直後処理終わり
 
-	if (ff == 0){ xx = 0; yy = 0; }//完成状態でオフセット量更新
-	else{ xx = 19; yy = -19; }
+	//ヒストグラム頂点
+	pLine->Begin();
+	for (i = 0; i < 128; i++){//ヒストグラム頂点
 
-	//パズル部画像描画処理開始
-	for (i = 0; i < prs->idx; i++){
-		for (j = 0; j < prs->bsize; j++){     //1ブロック内y方向
-			for (k = 0; k < prs->bsize; k++){//1ブロック内x方向
+		hi[0] = D3DXVECTOR2(640.0f + i, 200.0f - hist[i].rp / 80.0f);
+		hi[1] = D3DXVECTOR2(640.0f + i, 200.0f);
+		pLine->Draw(hi, 2, D3DCOLOR_ARGB(255, i * 2, 0, 0));
 
-				//エッジ検出処理
-				if (d.gfr == 3 && imgpi[j + img[i].fy - 100 + (yrs - 400) / 2]
-					[k + img[i].fx - 200 + (xrs - 400) / 2] == 0)continue;
+		hi[0] = D3DXVECTOR2(640.0f + i, 300.0f - hist[i].gp / 80.0f);
+		hi[1] = D3DXVECTOR2(640.0f + i, 300.0f);
+		pLine->Draw(hi, 2, D3DCOLOR_ARGB(255, 0, i * 2, 0));
 
-				//ブロック間は描画しない(フィルター値150,1 size==5)
-				if ((filter->block[j + img[i].fy - 100][k + img[i].fx - 200] == 150 ||
-					filter->block[j + img[i].fy - 100][k + img[i].fx - 200] == 1) &&
-					move->size != 5)continue;
+		hi[0] = D3DXVECTOR2(640.0f + i, 400.0f - hist[i].bp / 80.0f);
+		hi[1] = D3DXVECTOR2(640.0f + i, 400.0f);
+		pLine->Draw(hi, 2, D3DCOLOR_ARGB(255, 0, 0, i * 2));
+	}
+	pLine->End();
+	//ヒストグラム頂点終了
 
-				if (d.d3f == 1 || d.d3f == 2){
-					//3D表示
-					d3_im = imgpi[j + img[i].fy - 100 + (yrs - 400) / 2]
-						[k + img[i].fx - 200 + (xrs - 400) / 2];
-					if (d.d3f == 2)d3_z = ((d3_im >> 16) & 0xff + (d3_im >> 8) & 0xff + d3_im & 0xff) / 6;
-					else d3_z = 0;
-					DrawLine3D(VGet(k + img[i].cx + xx + x, 550 - (j + img[i].cy + yy + y),
-						       d3_z + 20),
-						       VGet(k + img[i].cx + xx + x, 550 - (j + img[i].cy + yy + y),
-						       -(d3_z + 20)),
-						       d3_im);
-				}
-				else{
-					//通常表示,表示座標位置＋オフセット, 表示色情報(完成座標位置－オフセット)
-					DrawPixel(k + img[i].cx + xx + x, j + img[i].cy + yy + y,
-						imgpi[j + img[i].fy - 100 + (yrs - 400) / 2]
-						[k + img[i].fx - 200 + (xrs - 400) / 2]);
-				}
-
-			}
-		}
-	}//パズル部画像描画処理終わり
-
-	for (i = 0; i < 128; i++){//ヒストグラム描画
-		DrawLine(640 + i, 200, 640 + i, 200 - hist[i].rp / 80, GetColor(i * 2, 0, 0));
-		DrawLine(640 + i, 300, 640 + i, 300 - hist[i].gp / 80, GetColor(0, i * 2, 0));
-		DrawLine(640 + i, 400, 640 + i, 400 - hist[i].bp / 80, GetColor(0, 0, i * 2));
-	}//ヒストグラム描画終了
-
-	//完成例画像描画
+	//完成例画像頂点
 	if (finish == 1){
+		k1 = 0;
+		fimg = (MY_VERTEX2*)malloc(sizeof(MY_VERTEX2) * 200 * 200);
 		for (j = 0; j < 200; j++){
 			for (i = 0; i < 200; i++){
 				if (d.gfr == 3 && imgpi[(yrs - 400) / 2 + j * 2][(xrs - 400) / 2 + i * 2] == 0)continue;
-				DrawPixel(i + 600, j + 400, imgpi[(yrs - 400) / 2 + j * 2][(xrs - 400) / 2 + i * 2]);
+				fimg[k1].x = 590.0f + i;
+				fimg[k1].y = 360.0f + (199.0f - j);
+				fimg[k1].z = 0.0f;
+				fimg[k1].rhw = 0.0f;
+				fimg[k1].color = imgpi[(yrs - 400) / 2 + j * 2][(xrs - 400) / 2 + i * 2];
+				fimg[k1].tu = 0.0f;
+				fimg[k1++].tv = 0.0f;
 			}
 		}
+		dx->pD3DDevice->BeginScene();// 描画開始宣言
+		// 頂点データのＦＶＦフォーマットを設定
+		dx->pD3DDevice->SetFVF(MY_VERTEX_FVF2);
+		// 描画
+		dx->pD3DDevice->DrawPrimitiveUP(D3DPT_POINTLIST, 200 * 200, fimg, sizeof(MY_VERTEX2));
+		dx->pD3DDevice->EndScene();// 描画終了宣言
+		free(fimg);
 	}
+
 	/********************************************************************************************************************************/
 	/********************************************最終画像描画処理終了****************************************************************/
 	/********************************************************************************************************************************/
-
+	return S_OK;
 }
 
-void ImageDraw::obj_create(char *name){//オブジェクト生成関数
-
-	if (read == NULL){//オブジェクト生成されていない時のみ実行
-		read = new ImageRead(name);//画像エンボス用オブジェクト生成
-	}
-}
-
-void ImageDraw::obj_delete(){//オブジェクト破棄関数
-
-	if (read != NULL){//オブジェクト生成されている時のみ実行
-		read->d.cap.release();         //カメラ終了処理
-		delete read;                  //オブジェクト破棄
-		read = NULL;
-	}
-}
-
-ImageDraw::ImageDraw(){}//規定コンストラクタ
-
-ImageDraw::ImageDraw(char *name):ImageRead(name){
-
-	read = NULL;
-	back_image(0);//背景描画関数,引数0==画像をハンドルに格納
-}
-
-ImageDraw::~ImageDraw(){//デストラクタ
-
-	obj_delete();//オブジェクト破棄関数
-
-}

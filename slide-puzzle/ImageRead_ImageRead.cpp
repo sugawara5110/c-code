@@ -5,30 +5,34 @@
 //*****************************************************************************************//
 
 #define _CRT_SECURE_NO_WARNINGS
-#include "DxLib.h"
+#include <windows.h>
+#include <d3d9.h>
+#include <d3dx9.h>
+#include "Dx9Init.h"
 #include <dshow.h>
 #include <qedit.h>
 #include "ImageRead.h"
 
 ImageRead::ImageRead(){}    //規定コンストラクタ
 
-ImageRead::ImageRead(char *name){ //引数有コンストラクタ
+ImageRead::ImageRead(Dx9Init *dx, char *name){ //引数有コンストラクタ
 
 	face_detect_h = NULL;   //検出スレッドハンドル初期化　
 	LPSTR lstr = name;     //directshow動画用ファイル名格納
 	BSTR bstr;
 
 	pGraphBuilder = NULL;
-	pMediaControl = NULL;
 	pSampleGrabberFilter = NULL;
 	pSampleGrabber = NULL;
 	pVideoWindow = NULL;
-	pVideoInfoHeader = NULL;
+	pMediaControl = NULL;
 	d.pMediaPosition = NULL;
 	pBasicAudio = NULL;
+	pVideoInfoHeader = NULL;
 	nBufferSize = NULL;
 	pBuffer = NULL;
 	linesize = NULL;
+	pMyVB = NULL;
 
 	// COMを初期化
 	CoInitialize(NULL);
@@ -70,18 +74,13 @@ ImageRead::ImageRead(char *name){ //引数有コンストラクタ
 
 	if (!strcmp(d.g_name, "./dat/img/z_cam_ewc.dat"))d.mcf = 2;//カメラ選択時
 
+	d.th_st = 0;    //検出スレッド進行状況初期化
 	d.lock = 0;    //データ操作時ロック初期化(本スレ)
 	d.lock_t = 0; //データ操作時ロック初期化(検出スレッド)
 	d.th_fin = 0;//スレッドreturnフラグ初期化
 	d.gfr = 0;  //画像処理モード初期化
 	mc = 0;    //pic_resize内メモリ確保チェック
-
-	d.d3f = 0;             //3Dモード初期化 0:通常 1:3D
-	d.theta_lr = 0;       //3Dモードカメラ角度
-	CameraPos.x = 400.0f;// カメラの座標を初期化
-	CameraPos.y = 250.0f;
-	CameraPos.z = -550.0f;
-
+   
 	if (d.mcf == 1){//動画初期処理開始
 
 		// FilterGraphを生成
@@ -156,6 +155,9 @@ ImageRead::ImageRead(char *name){ //引数有コンストラクタ
 		linesize = pVideoInfoHeader->bmiHeader.biWidth * 3;
 		if (linesize % sizeof(LONG) != 0)
 			linesize += sizeof(LONG) - (linesize % sizeof(LONG));
+
+		//ストリームの時間幅を取得(最初に1回取得すればok)
+		d.pMediaPosition->get_Duration(&d.time2);
 	}
 
 	if (d.mcf == 2){//カメラ初期処理開始
@@ -163,21 +165,33 @@ ImageRead::ImageRead(char *name){ //引数有コンストラクタ
 		d.cap.set(CV_CAP_PROP_FPS, 30.0); //フレームレート30にする
 	}
 
+	d3 = 1;//3Dモード切替
 }
 
 ImageRead::~ImageRead(){//デストラクタ
 
+	if (pMyVB != NULL){
+		pMyVB->Release(); pMyVB = NULL;
+	}
+	d.th_f = 0;   //検出スレッドフラグ初期化
 	d.th_fin = 1;//スレッドreturnフラグON
-	d.cap.release();         //カメラ終了処理
-	if (d.mcf == 1){   //資源解放
+	d.cap.release();    //カメラ終了処理
+	if (d.mcf == 1){   //動画選択時資源解放
 		free(pBuffer);//メモリ解放
-		pSampleGrabber->Release();
-		pSampleGrabberFilter->Release();
-		pMediaControl->Release();
-		pGraphBuilder->Release();
-		pVideoWindow->Release();
-		d.pMediaPosition->Release();
 		pBasicAudio->Release();
+		pBasicAudio = NULL;
+		d.pMediaPosition->Release();
+		d.pMediaPosition = NULL;
+		pMediaControl->Release();
+		pMediaControl = NULL;
+		pVideoWindow->Release();
+		pVideoWindow = NULL;
+		pSampleGrabber->Release();
+		pSampleGrabber = NULL;
+		pSampleGrabberFilter->Release();
+		pSampleGrabberFilter = NULL;
+		pGraphBuilder->Release();
+		pGraphBuilder = NULL;
 	}
 
 	// COM終了
@@ -186,6 +200,5 @@ ImageRead::~ImageRead(){//デストラクタ
 	//メモリ解放
 	for (int i = 0; i < yrs; i++){ free(imgpi[i]); free(imcpy[i]); free(imcpy1[i]); }
 	free(imgpi); free(imcpy); free(imcpy1);
-
 }
 

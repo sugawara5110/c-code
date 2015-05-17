@@ -5,12 +5,14 @@
 //*****************************************************************************************//
 
 #define _CRT_SECURE_NO_WARNINGS
-#include "DxLib.h"
+#include <windows.h>
+#include <d3d9.h>
+#include <d3dx9.h>
+#include "Dx9Init.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include "sound.h"
 #include "ImageRead.h"
 #include "ImageDraw.h"
 #include "Move.h"
@@ -18,18 +20,96 @@
 #include "File.h"
 #include "Filter.h"
 
-int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int){    //メイン関数
+//-------------------------------------------------------------
+// メッセージ処理用コールバック関数
+// 引数
+//		hWnd	: ウィンドウハンドル
+//		msg		: メッセージ
+//		wParam	: メッセージの最初のパラメータ(押されたキーの特定等に使用)
+//		lParam	: メッセージの2番目のパラメータ
+// 戻り値
+//		メッセージ処理結果
+//-------------------------------------------------------------
+LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
 
-	//ウィンドウモード変更, DxLib初期化, ウィンドウサイズ変更, 裏画面設定
-	ChangeWindowMode(TRUE), DxLib_Init(), SetGraphMode(800, 600, 32); SetDrawScreen(DX_SCREEN_BACK);
-	//非アクティブでも処理続行
-	SetAlwaysRunFlag(TRUE);
+	Menu menu(0);
+	menu.xm = GET_X_LPARAM(lParam);
+	menu.ym = GET_Y_LPARAM(lParam);
+	switch (msg) {
+	case WM_CLOSE:			//×ボタン
+		PostQuitMessage(0);//アプリケーション終了処理,メッセージキューにWM_QUITをポスト
+		break;
+	case WM_LBUTTONDOWN://左クリック押し
+		menu.clf = 1;
+		break;
+	default:
+		if (wParam == MK_LBUTTON)menu.clf = 1; else menu.clf = 0;
+		return DefWindowProc(hWnd, msg, wParam, lParam);
+	}
+	return 0;
+}
 
-	int i, j, k;          //for文
-	int frg, frgr;       //キー入力,入力履歴
-	int fr;
-	int Color;         //色
-	int sm[2];        //手数計算処理前スペース座標退避用
+//-------------------------------------------------------------
+// アプリケーションのエントリポイント
+// 引数
+//		hInstance     : 現在のインスタンスのハンドル
+//		hPrevInstance : 以前のインスタンスのハンドル
+//		lpCmdLine	  : コマンドラインパラメータ
+//		nCmdShow	  : ウィンドウの表示状態
+// 戻り値
+//		成功したら0以外の値
+//-------------------------------------------------------------
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow){
+
+	char clsName[] = "Slide Puzzle";// ウィンドウクラス名
+
+	HWND hWnd;//ウィンドウハンドル
+	MSG msg; //メッセージ
+	//ウインドウクラスの初期化
+	WNDCLASSEX wcex;
+	wcex.cbSize = sizeof(WNDCLASSEX); //この構造体のサイズ
+	wcex.style = NULL;               //ウインドウスタイル(default)
+	wcex.lpfnWndProc = WindowProc;  //メッセージ処理関数の登録
+	wcex.cbClsExtra = 0;       //通常は0	                
+	wcex.cbWndExtra = 0;      //通常は0					
+	wcex.hInstance = hInstance; //インスタンスへのハンドル				
+	wcex.hIcon = NULL;         //アイコン (無し)				
+	wcex.hCursor = NULL;      //カーソルの形				
+	wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); //背景				
+	wcex.lpszMenuName = NULL;                       //メニュー無し				
+	wcex.lpszClassName = (TCHAR*)clsName;          //クラス名               
+	wcex.hIconSm = NULL;                          //小アイコン			   
+
+	//ウインドウクラスの登録(RegisterClassEx関数)
+	if (!RegisterClassEx(&wcex))
+		return E_FAIL;
+
+	//ウインドウ生成ウインドウモード
+	if (!(hWnd = CreateWindow(clsName, //登録クラス名
+		clsName,                      //ウインドウ名
+		WS_OVERLAPPEDWINDOW ^ WS_MAXIMIZEBOX ^ WS_THICKFRAME | WS_VISIBLE,//ウインドウスタイル
+		CW_USEDEFAULT, //ウインドウ横位置
+		0,            //ウインドウ縦位置
+		800,             //ウインドウ幅
+		600,            //ウインドウ高さ
+		NULL,          //親ウインドウハンドル
+		NULL,         //メニュー,子ウインドウハンドル
+		hInstance,   //アプリケーションインスタンスハンドル
+		NULL)))     //ウインドウ作成データ
+		return E_FAIL;
+
+	// ウィンドウの表示
+	ShowWindow(hWnd, nCmdShow);
+	// WM_PAINTが呼ばれないようにする
+	ValidateRect(hWnd, 0);
+
+	//DirectX初期化
+	Dx9Init dx;
+	if (dx.init(hWnd) == E_FAIL)return -1;
+
+	int flg;        //キー入力,入力履歴
+	char n[100];   //file返り値一時保管
+	int msgf = 0; //アプリ終了ループ抜けフラグ
 
 	Move move;          //移動クラスオブジェクト生成
 	File file;         //ファイルクラスオブジェクト生成
@@ -38,218 +118,116 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int){    //メイン関数
 	ImageDraw *draw;//画像描画クラスオブジェクト定義
 
 	srand((unsigned)time(NULL));
-	InitSoftImage();                 //ソフトイメージ全開放
-	Color = GetColor(255, 255, 255);//字の色
 
-	menu.mouse(NULL, 0, 0); //マウス関数初期設定 
-	sound(0);              //サウンド関数初期処理
+	strcpy(n, file.file(&dx, &msg));//nに返り値格納
+	if (strcmp(n, "stop") == 0){   //file内でPostQuitMessage()が呼ばれた為アプリ終了処理
+		return (int)msg.wParam;
+	}
 
-	draw = new ImageDraw(file.file());//ファイル関数返り値でdrawオブジェクト生成
-
+	draw = new ImageDraw(&dx, n);//ファイル関数返り値でdrawオブジェクト生成
 	while (1){ //1番外側のwhile文
 
-		frg = 0;       //移動フラグ初期化
-
-		while (frg == 0){    //個数決定
-			if (ProcessMessage() == -1){ InitSoftImage(); DxLib_End(); free(move.img); return -1; }//強制終了
-			draw->drawing_img(&filter, NULL, 0, 0, 1); //描画前処理
-			draw->drawing_img(&filter, NULL, 0, 0, 0);//描画
-			frg = menu.mouse(draw, 2, 0);  //マウス関数
-			ScreenFlip();          //表画面に描写
-		}                         //while終わり
-		move.size = frg - 1;     //size決定
-		sound(1);               //サウンド関数ボタン音
-
-		//メモリ確保
-		move.img = (Move::imxy*)malloc(sizeof(Move::imxy)*move.paras[move.size].idx);//画像座標
+		flg = 0;       //移動フラグ初期化
+		draw->drawing_img(&dx, &filter, NULL, 0, 0, 0, 1); //描画前処理
+		while (flg == 0){    //個数決定
+			if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {//メッセージ取得時実行される
+				if (msg.message == WM_QUIT) {//WindowProcでPostQuitMessage()が呼ばれた
+					msgf = 1;
+					break;	//ループの終了
+				}
+				else {
+					// メッセージの翻訳とディスパッチ
+					TranslateMessage(&msg);//キーボード関連のイベントを翻訳
+					DispatchMessage(&msg);//メッセージをウインドウプロシージャに転送する
+				}
+			}
+			draw->drawing_img(&dx, &filter, NULL, 0, 0, 0, 0);//描画
+			flg = menu.mouse(&dx, draw, 2, 0);  //マウス関数
+			dx.drawscreen();//描画
+		}               //while終わり
+		if (msgf)break;//アプリ終了ループ抜け
+		move.coordinates(flg - 1);//(frg - 1)ブロックサイズ番号で座標確保
 
 		//ブロック画像フィルター作成
 		filter.filter(&move, draw);
-		//ブロック画像フィルター作成終了
 
-		k = 0;
-		for (j = 100; j <= move.paras[move.size].lastposy; j += move.paras[move.size].bsize){    //座標データ初期化
-			for (i = 200; i <= move.paras[move.size].lastposx; i += move.paras[move.size].bsize){
-				move.img[k].cx = move.img[k].fx = move.img[k].chx = i;
-				move.img[k].cy = move.img[k].fy = move.img[k++].chy = j;
-			}
+		if (move.shuffle(&dx, &msg, &filter, draw) == -1){//シャッフル関数
+			break;	//ループの終了
 		}
 
-		move.shuffle(); //シャッフル関数
-		move.change(&filter, draw);//ブロック交換関数
-
 		while (1){//パズル実行中ループ
-
-			frg = 0; //移動フラグ初期化
-
-			if (ProcessMessage() == -1){ InitSoftImage(); DxLib_End(); free(move.img); return -1; }
-
-			frg = menu.mouse(draw, 3, 0); //マウス関数
-		 
-			if (frg == 20 || draw->d.gfr == 9) {//画像エンボス処理
-				fr = 0;
-				fr = menu.mouse(draw, 6, 0);
-				if (fr != 0 || draw->d.gfr != 9){//メニュー操作有又はgfr==9後最初
-					draw->obj_delete();   //画像エンボス用オブジェクト破棄
-					draw->obj_create(file.e_file(draw, fr));//画像エンボス用オブジェクト生成
-					draw->read->drawing_img(NULL, NULL, 0, 0, 1);//静止画用更新
+			if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+				if (msg.message == WM_QUIT) {	// PostQuitMessage()が呼ばれた
+					msgf = 1;
+					break;	//ループの終了
 				}
-				draw->d.gfr = 9;
-			}
-
-			if (draw->d.d3f == 1 || draw->d.d3f == 2){//3D画像
-				fr = 0;
-				fr = menu.mouse(draw, 7, 0);
-				if (fr == 1)
-				{
-					draw->d.theta_lr -= 1;
-					if (draw->d.theta_lr < 0)draw->d.theta_lr = 360;
-				}
-				if (fr == 2)
-				{
-					draw->d.theta_lr += 1;
-					if (draw->d.theta_lr > 360)draw->d.theta_lr = 0;
+				else {
+					// メッセージの翻訳とディスパッチ
+					TranslateMessage(&msg);
+					DispatchMessage(&msg);
 				}
 			}
+			flg = 0; //移動フラグ初期化
 
-			ScreenFlip();       //表画面描写
-			if (frg >= 5) {    //移動フラグの時は飛ばす
-				if (frg == 5){//全ブロック位置元通り処理↓
-					sound(1);//サウンド関数ボタン音  
-					for (i = 0; i < move.paras[move.size].idx; i++){ move.img[i].chx = move.img[i].fx; move.img[i].chy = move.img[i].fy; } //完成画像データからコピー
-					move.change(&filter, draw);//ブロック交換関数
-				}             //if終わり
+			flg = menu.mouse(&dx, draw, 3, 0); //マウス関数
 
-				if (frg == 6){        //並び替え
-					sound(1);        //サウンド関数ボタン音
-					move.shuffle(); //シャッフル関数
-					move.change(&filter, draw);//ブロック交換関数
-				}                     //if終わり
+			switch (flg){
 
-				if (frg == 7){ //automatic関数実行
-					sound(1); //サウンド関数ボタン音
-					move.auto_matic(&filter, draw, 0, move.paras[move.size].pcs, move.paras[move.size].pcs, 0);
-					draw->drawing_img(&filter, &move, 0, 0, 0);
+			case 5://全ブロック位置元通り処理↓
+				if (move.recovery(&dx, &msg, &filter, draw) == -1){//ブロック元通り関数
+					msgf = 1;
+					break;	//ループの終了
 				}
+				break;
 
-				if (frg >= 8 && frg <= 12 || frg >= 14 && frg <= 19 || frg == 21){ //画像処理前準備
-					draw->obj_delete();//オブジェクト破棄
+			case 6://並び替え
+				if (move.shuffle(&dx, &msg, &filter, draw) == -1){//シャッフル関数
+					msgf = 1;
+					break;	//ループの終了
 				}
+				break;
 
-				if (frg == 8){//個数変更
-					InitSoftImage(); free(move.img);
-					draw->d.th_st = 0;           //スレッド進行状況初期化
-					draw->d.gfr = 0;            //画像モードリセット
-					break;
-				} //読み込み済みグラフィックデータ削除,メモリ解放,break
+			case 7://automatic関数実行
+				if (move.auto_matic(&dx, &msg, &filter, draw, 0, move.paras[move.size].pcs, move.paras[move.size].pcs, 0) == -1){ msgf = 1; break; }
+				draw->drawing_img(&dx, &filter, &move, 0, 0, 0, 0);
+				break;
 
-				if (frg == 9){             //画像変更
-					draw->d.th_f = 0;     //検出スレッドフラグ初期化
-					draw->d.gfr = 0;     //画像モードリセット
-					delete draw;        //オブジェクト破棄  
-					draw = new ImageDraw(file.file()); //ファイル関数呼び出し,画像描画オブジェクト生成
-					draw->d.th_st = 0; //検出スレッド進行状況初期化
-					draw->drawing_img(&filter, &move, 0, 0, 1);//背景,画像描画
+			case 9://画像変更
+				delete draw;        //オブジェクト破棄  
+				strcpy(n, file.file(&dx, &msg));//nに返り値格納
+				if (strcmp(n, "stop") == 0){   //file内でPostQuitMessage()が呼ばれた為アプリ終了処理
+					return (int)msg.wParam;
 				}
+				draw = new ImageDraw(&dx, n);//ファイル関数返り値でdrawオブジェクト生成
+				draw->drawing_img(&dx, &filter, &move, 0, 0, 0, 1);//背景,画像描画
+				break;
 
-				if (frg == 10) {//通常画像画像処理
-					draw->d.gfr = 0; draw->drawing_img(&filter, &move, 0, 0, 1);
-				}
+			case 13://手数計算
+				if (move.count(&dx, &msg, &filter, draw, 0, move.paras[move.size].pcs, move.paras[move.size].pcs, 0) == -1){ msgf = 1; break; }
+				break;
 
-				if (frg == 11) {//モノクロ画像処理
-					draw->d.gfr = 1; draw->drawing_img(&filter, &move, 0, 0, 1);
-				}
+			}//switch終了
+			if (msgf)break;//ループ終了
 
-				if (frg == 12) {//モザイク画像処理
-					draw->d.gfr = 2; draw->drawing_img(&filter, &move, 0, 0, 1);
-				}
+			//画像処理準備
+			if (draw->image_processing_flg(&dx, &filter, &move, flg) == 1)break;//==1はパズル実行中ループ抜け
 
-				if (frg == 13){//手数計算
-					move.tkf = 1; move.tkc = 0;//フラグ,カウント初期化
-					for (i = 0; i < move.paras[move.size].idx; i++){
-						move.img[i].chx = move.img[i].cx;//手数計算前座標値退避
-						move.img[i].chy = move.img[i].cy;//手数計算前座標値退避
-					}
-					sm[0] = move.space[0];//手数計算前座標値退避
-					sm[1] = move.space[1];//手数計算前座標値退避
-					DrawFormatString(305, 502, Color, "画像内クリックで中止");
-					ScreenFlip();
-					move.auto_matic(&filter, draw, 0, move.paras[move.size].pcs, move.paras[move.size].pcs, 0);//auto_matic関数処理
+			dx.drawscreen();//描画
 
-					for (i = 0; i < move.paras[move.size].idx; i++){
-						move.img[i].cx = move.img[i].chx;//手数計算後座標値戻し
-						move.img[i].cy = move.img[i].chy;//手数計算後座標値戻し
-					}
-					move.space[0] = sm[0];//手数計算後座標値戻し
-					move.space[1] = sm[1];//手数計算後座標値戻し
-					if (move.cnt_results != -1){//-1だと中止してる事になる
-						DrawBox(300, 500, 500, 540, 1, TRUE);
-						DrawFormatString(305, 502, Color, "%d手で完了します", move.tkc);
-						DrawFormatString(305, 522, Color, "画像内クリックで終了");
-						ScreenFlip();
-						while (menu.mouse(draw, 5, 0) != 1);
-					}//if終わり
-					draw->drawing_img(&filter, &move, 0, 0, 1);
-					move.tkf = 0; move.tkc = 0;//フラグ,カウント初期化
-				}//手数計算終了
+			if (move.mov(&dx, &msg, &filter, draw, 0, flg, 0) == -1){ msgf = 1; break; } //移動処理,ループ抜け
 
-				if (frg == 14) {//エッジ検出処理
-					draw->d.gfr = 3; draw->drawing_img(&filter, &move, 0, 0, 1);
-				}
+			if (draw->drawing_img(&dx, &filter, &move, 0, 0, 0, 0) == -1){ msgf = 1; break; }//移動しない場合の為の処理
 
-				if (frg == 15) {//エンボス処理
-					draw->d.gfr = 4; draw->drawing_img(&filter, &move, 0, 0, 1);
-				}
-
-				if (frg == 16) {//絵画風処理
-					draw->d.gfr = 5; draw->drawing_img(&filter, &move, 0, 0, 1);
-				}
-
-				if (frg == 17) {//顔面検出処理
-					draw->d.th_f = 0; //検出スレッドスタートフラグ0:ストップ 1:スタート
-					draw->d.th_st = 0;//スレッド進行状況初期化
-					draw->d.gfr = 6; draw->drawing_img(&filter, &move, 0, 0, 1);
-				}
-
-				if (frg == 18) {//顔面モザイク処理
-					draw->d.th_f = 0; //検出スレッドスタートフラグ0:ストップ 1:スタート
-					draw->d.th_st = 0;//スレッド進行状況初期化
-					draw->d.gfr = 7; draw->drawing_img(&filter, &move, 0, 0, 1);
-				}
-
-				if (frg == 19) {//ネガポジ処理
-					draw->d.gfr = 8; draw->drawing_img(&filter, &move, 0, 0, 1);
-				}
-
-				if (frg == 21) {//顔すげ替え処理
-					draw->d.th_f = 0; //検出スレッドスタートフラグ0:ストップ 1:スタート
-					draw->d.th_st = 0;//スレッド進行状況初期化
-					draw->d.gfr = 10; draw->drawing_img(&filter, &move, 0, 0, 1);
-				}
-
-				if (frgr != 22 && frg == 22){//3D画像
-					if (draw->d.d3f == 0)draw->d.d3f = 1;
-					else if (draw->d.d3f == 1)draw->d.d3f = 2;
-					else if (draw->d.d3f == 2)draw->d.d3f = 0;
-					draw->drawing_img(&filter, &move, 0, 0, 1);//背景,画像描画
-				}
-
-			}//移動フラグの時は飛ばす
-
-			move.mov(&filter, draw, 0, frg, 0); //移動処理
-
-			draw->drawing_img(&filter, &move, 0, 0, 0);//移動しない場合の為の処理
-
-			frgr = frg;//キー入力履歴
 		}//パズル実行中ループ
+		if (msgf)break;//ループ終了
 
 	}//一番外のwhile終わり
-	InitSoftImage();        //ソフトイメージ全開放
-	DxLib_End();           // DXライブラリ終了処理
-	free(move.img); return 0;//メモリ解放,終了
-} // winmain終わり
 
-//********************************************************************************************************//
-//**** libjpeg　Copyright (C) 1991-2013, Thomas G. Lane, Guido Vollbeding.  ******************************//
-//**** DX Library Copyright (C) 2001-2014 Takumi Yamada.   ***********************************************//
-//********************************************************************************************************//
+	if (draw != NULL){//オブジェクト生成されている時のみ実行
+		delete draw;                  //オブジェクト破棄
+		draw = NULL;
+	}
+
+	return (int)msg.wParam;
+}// winmain終わり
+

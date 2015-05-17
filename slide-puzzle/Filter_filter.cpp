@@ -4,7 +4,6 @@
 //**                                                                                     **//
 //*****************************************************************************************//
 
-#include "DxLib.h"
 #include "ImageRead.h"
 #include "ImageDraw.h"
 #include "Move.h"

@@ -20,7 +20,7 @@ private:
 	int i, i1, k;            //i:file現要素 i1:e_file現要素 k:要素数  
 	
 public:
-	File();                                //コンストラクタ
+	File();                                 //コンストラクタ
 	char *file(Dx9Init *dx, MSG *msg);    //基本画像選択用
 	char *e_file(ImageDraw *draw, int f);//画像エンボス用
 

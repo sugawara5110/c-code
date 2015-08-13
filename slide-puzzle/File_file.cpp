@@ -70,7 +70,7 @@ char* File::file(Dx9Init *dx, MSG *msg){ //画像ファイル選択関数
 	while (1){
 		fdraw = new ImageDraw(dx, f_name_tbl[i]);//ファイル関数用オブジェクト生成
 
-		if (fdraw->drawing_img(dx, NULL, NULL, x, 0, 0, 1) == -1) return "stop";//動画像描画関数
+		if (fdraw->draw_img(dx, x, 0, 0) == -1) return "stop";//動画像描画関数
 
 		if (PeekMessage(msg, NULL, 0, 0, PM_REMOVE)) {
 			if (msg->message == WM_QUIT) {	// PostQuitMessage()が呼ばれた
@@ -89,7 +89,7 @@ char* File::file(Dx9Init *dx, MSG *msg){ //画像ファイル選択関数
 
 				dx->drawscreen();//描画
 
-				if (fdraw->drawing_img(dx, NULL, NULL, x, 0, 0, 0) == -1) return "stop";
+				if (fdraw->draw_img(dx, x, 0, 0) == -1) return "stop";
 				menu.mouse(dx, NULL, 1, 0); //マウス関数
 				if (flg == 1)x -= 20;
 				if (flg == 2)x += 20;
@@ -110,7 +110,7 @@ char* File::file(Dx9Init *dx, MSG *msg){ //画像ファイル選択関数
 				}
 			}
 
-			if (fdraw->drawing_img(dx, NULL, NULL, x, 0, 0, 0) == -1) return "stop";
+			if (fdraw->draw_img(dx, x, 0, 0) == -1) return "stop";
 			flg = menu.mouse(dx, NULL, 1, 0); //マウス関数
 
 			dx->drawscreen();//描画
@@ -128,7 +128,7 @@ char* File::file(Dx9Init *dx, MSG *msg){ //画像ファイル選択関数
 
 				dx->drawscreen();//描画
 
-				if (fdraw->drawing_img(dx, NULL, NULL, x, 0, 0, 0) == -1) return "stop";
+				if (fdraw->draw_img(dx, x, 0, 0) == -1) return "stop";
 				menu.mouse(dx, NULL, 1, 0); //マウス関数
 				if (flg == 1)x -= 20;
 				if (flg == 2)x += 20;
@@ -150,7 +150,7 @@ char* File::e_file(ImageDraw *draw, int f){
 	if (f == 1)i1 = i1%k + 1;
 	if (f == 2){ i1 = i1 - 1; if (i1 == 0)i1 = k; }
 
-	if (draw->d.mcf == 2 && !strcmp(f_name_tbl[i1], "./dat/img/z_cam_ewc.dat")){//カメラ選択時
+	if (draw->getmcf() == 2 && !strcmp(f_name_tbl[i1], "./dat/img/z_cam_ewc.dat")){//カメラ選択時
 
 		if (f == 1)i1 = i1%k + 1;
 		if (f == 2){ i1 = i1 - 1; if (i1 == 0)i1 = k; }

@@ -18,7 +18,6 @@
 #include "Move.h"
 #include "Menu.h"
 #include "File.h"
-#include "Filter.h"
 
 //-------------------------------------------------------------
 // メッセージ処理用コールバック関数
@@ -32,18 +31,17 @@
 //-------------------------------------------------------------
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam){
 
-	Menu menu(0);
-	menu.xm = GET_X_LPARAM(lParam);
-	menu.ym = GET_Y_LPARAM(lParam);
+	Menu::xm = GET_X_LPARAM(lParam);
+	Menu::ym = GET_Y_LPARAM(lParam);
 	switch (msg) {
 	case WM_CLOSE:			//×ボタン
 		PostQuitMessage(0);//アプリケーション終了処理,メッセージキューにWM_QUITをポスト
 		break;
 	case WM_LBUTTONDOWN://左クリック押し
-		menu.clf = 1;
+		Menu::clf = 1;
 		break;
 	default:
-		if (wParam == MK_LBUTTON)menu.clf = 1; else menu.clf = 0;
+		if (wParam == MK_LBUTTON)Menu::clf = 1; else Menu::clf = 0;
 		return DefWindowProc(hWnd, msg, wParam, lParam);
 	}
 	return 0;
@@ -105,7 +103,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 	//DirectX初期化
 	Dx9Init dx;
-	if (dx.init(hWnd) == E_FAIL)return -1;
+	if (dx.initialize(hWnd) == E_FAIL)return -1;
 
 	int flg;        //キー入力,入力履歴
 	char n[100];   //file返り値一時保管
@@ -113,8 +111,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 	Move move;          //移動クラスオブジェクト生成
 	File file;         //ファイルクラスオブジェクト生成
-	Filter filter;    //フィルタークラスオブジェクト生成
-	Menu menu;       //メニュークラスオブジェクト生成
+	Menu menu;        //メニュークラスオブジェクト生成
 	ImageDraw *draw;//画像描画クラスオブジェクト定義
 
 	srand((unsigned)time(NULL));
@@ -128,7 +125,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	while (1){ //1番外側のwhile文
 
 		flg = 0;       //移動フラグ初期化
-		draw->drawing_img(&dx, &filter, NULL, 0, 0, 0, 1); //描画前処理
 		while (flg == 0){    //個数決定
 			if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {//メッセージ取得時実行される
 				if (msg.message == WM_QUIT) {//WindowProcでPostQuitMessage()が呼ばれた
@@ -141,7 +137,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 					DispatchMessage(&msg);//メッセージをウインドウプロシージャに転送する
 				}
 			}
-			draw->drawing_img(&dx, &filter, NULL, 0, 0, 0, 0);//描画
+			draw->draw_img(&dx, &move, 0, 0, 0);//描画
 			flg = menu.mouse(&dx, draw, 2, 0);  //マウス関数
 			dx.drawscreen();//描画
 		}               //while終わり
@@ -149,9 +145,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		move.coordinates(flg - 1);//(frg - 1)ブロックサイズ番号で座標確保
 
 		//ブロック画像フィルター作成
-		filter.filter(&move, draw);
+		draw->filter(&move);
 
-		if (move.shuffle(&dx, &msg, &filter, draw) == -1){//シャッフル関数
+		if (move.shuffle(&dx, &msg, draw) == -1){//シャッフル関数
 			break;	//ループの終了
 		}
 
@@ -174,22 +170,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 			switch (flg){
 
 			case 5://全ブロック位置元通り処理↓
-				if (move.recovery(&dx, &msg, &filter, draw) == -1){//ブロック元通り関数
+				if (move.recovery(&dx, &msg, draw) == -1){//ブロック元通り関数
 					msgf = 1;
 					break;	//ループの終了
 				}
 				break;
 
 			case 6://並び替え
-				if (move.shuffle(&dx, &msg, &filter, draw) == -1){//シャッフル関数
+				if (move.shuffle(&dx, &msg, draw) == -1){//シャッフル関数
 					msgf = 1;
 					break;	//ループの終了
 				}
 				break;
 
 			case 7://automatic関数実行
-				if (move.auto_matic(&dx, &msg, &filter, draw, 0, move.paras[move.size].pcs, move.paras[move.size].pcs, 0) == -1){ msgf = 1; break; }
-				draw->drawing_img(&dx, &filter, &move, 0, 0, 0, 0);
+				if (move.auto_matic(&dx, &msg, draw, NULL, 0) == -1){ msgf = 1; break; }
 				break;
 
 			case 9://画像変更
@@ -199,24 +194,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 					return (int)msg.wParam;
 				}
 				draw = new ImageDraw(&dx, n);//ファイル関数返り値でdrawオブジェクト生成
-				draw->drawing_img(&dx, &filter, &move, 0, 0, 0, 1);//背景,画像描画
+				//ブロック画像フィルター作成
+				draw->filter(&move);
 				break;
 
 			case 13://手数計算
-				if (move.count(&dx, &msg, &filter, draw, 0, move.paras[move.size].pcs, move.paras[move.size].pcs, 0) == -1){ msgf = 1; break; }
+				if (move.count(&dx, &msg, draw) == -1){ msgf = 1; break; }
 				break;
 
 			}//switch終了
 			if (msgf)break;//ループ終了
 
 			//画像処理準備
-			if (draw->image_processing_flg(&dx, &filter, &move, flg) == 1)break;//==1はパズル実行中ループ抜け
+			if (draw->processing_img_flg(&dx, &move, flg) == 1)break;//==1はパズル実行中ループ抜け
 
 			dx.drawscreen();//描画
 
-			if (move.mov(&dx, &msg, &filter, draw, 0, flg, 0) == -1){ msgf = 1; break; } //移動処理,ループ抜け
+			if (move.mov(&dx, &msg, draw, flg, 0) == -1){ msgf = 1; break; } //移動処理,ループ抜け
 
-			if (draw->drawing_img(&dx, &filter, &move, 0, 0, 0, 0) == -1){ msgf = 1; break; }//移動しない場合の為の処理
+			if (draw->draw_img(&dx, &move, 0, 0, 0) == -1){ msgf = 1; break; }//移動しない場合の為の処理
 
 		}//パズル実行中ループ
 		if (msgf)break;//ループ終了
@@ -224,7 +220,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	}//一番外のwhile終わり
 
 	if (draw != NULL){//オブジェクト生成されている時のみ実行
-		delete draw;                  //オブジェクト破棄
+		delete draw; //オブジェクト破棄
 		draw = NULL;
 	}
 

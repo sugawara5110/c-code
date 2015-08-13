@@ -11,9 +11,8 @@
 #include "ImageRead.h"
 #include "ImageDraw.h"
 #include "Move.h"
-#include "Filter.h"
 
-int Move::change(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw){ //ƒuƒƒbƒNŒğŠ·ŠÖ”éŒ¾
+int Move::change(Dx9Init *dx, MSG *msg, ImageDraw *draw){ //ƒuƒƒbƒNŒğŠ·ŠÖ”éŒ¾
 
 	int i;           //for—p
 	int cnt;        //ˆÚ“®Š®—¹ƒuƒƒbƒN”ƒJƒEƒ“ƒg 
@@ -22,10 +21,6 @@ int Move::change(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw){ //ƒuƒ
 	int mv;       //ˆÚ“®—Ê•ÏX—p
 
 	mv = prs->move;//’ÊíƒuƒƒbƒNˆÚ“®—Ê‚É‰Šú‰»
-
-	if (draw->d.mcf == 1 || draw->d.mcf == 2){//“®‰æƒuƒƒbƒN,ˆÚ“®—Ê‚ÉXV
-		mv = prs->movem;           //“®‰æƒuƒƒbƒNˆÚ“®—ÊXV
-	}
 
 	for (int i = 0; i < prs->idx; i++){//z•ûŒüˆÚ“®æŠi”[
 		img[i].chz = (rand() % 600) - 300;
@@ -64,7 +59,7 @@ int Move::change(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw){ //ƒuƒ
 		}
 
 		draw->theta(1, 5);
-		if (draw->drawing_img(dx, filter, this, 0, 0, 0, 0) == -1) return -1;//‰æ‘œ•`‰æ
+		if (draw->draw_img(dx, this, 0, 0, 0) == -1) return -1;//‰æ‘œ•`‰æ
 		dx->drawscreen();//•`‰æ
 	}//z•ûŒü”ò‚Ño‚µˆ—I—¹
 
@@ -99,7 +94,7 @@ int Move::change(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw){ //ƒuƒ
 		else { img[prs->idx - 1].cx -= mv; }
 
 		draw->theta(1, 5);
-		if (draw->drawing_img(dx, filter, this, 0, 0, 0, 0) == -1) return -1;//‰æ‘œ•`‰æ
+		if (draw->draw_img(dx, this, 0, 0, 0) == -1) return -1;//‰æ‘œ•`‰æ
 		dx->drawscreen();//•`‰æ
 	}//xyˆÚ“®I—¹
 
@@ -143,7 +138,7 @@ int Move::change(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw){ //ƒuƒ
 		}
 
 		draw->theta(1, 5);
-		if (draw->drawing_img(dx, filter, this, 0, 0, 0, 0) == -1) return -1;//‰æ‘œ•`‰æ
+		if (draw->draw_img(dx, this, 0, 0, 0) == -1) return -1;//‰æ‘œ•`‰æ
 		dx->drawscreen();//•`‰æ
 	}//z•ûŒü–ß‚èI‚í‚è
 
@@ -159,7 +154,7 @@ int Move::change(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw){ //ƒuƒ
 			}
 		}
 		int the = draw->theta(1, 5);
-		if (draw->drawing_img(dx, filter, this, 0, 0, 0, 0) == -1) return -1;//‰æ‘œ•`‰æ
+		if (draw->draw_img(dx, this, 0, 0, 0) == -1) return -1;//‰æ‘œ•`‰æ
 		dx->drawscreen();//•`‰æ
 		if (the == 0)break;
 	}
@@ -168,7 +163,7 @@ int Move::change(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw){ //ƒuƒ
 } //change()I‚í‚è	
 
 
-int Move::shuffle(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw){   //ƒVƒƒƒbƒtƒ‹ŠÖ”éŒ¾ 
+int Move::shuffle(Dx9Init *dx, MSG *msg, ImageDraw *draw){   //ƒVƒƒƒbƒtƒ‹ŠÖ”éŒ¾ 
 
 	int i, j, k, tempx, tempy;
 	para *prs = &paras[size];
@@ -199,14 +194,14 @@ int Move::shuffle(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw){   //ƒ
 		img[k].chy = tempy;
 	} //forI‚í‚è  		
 
-	return change(dx, msg, filter, draw);//change•Ô‚è’l‚ğ‚»‚Ì‚Ü‚Ü•Ô‚·
+	return change(dx, msg, draw);//change•Ô‚è’l‚ğ‚»‚Ì‚Ü‚Ü•Ô‚·
 }
 
-int Move::recovery(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw){//Œ³’Ê‚è
+int Move::recovery(Dx9Init *dx, MSG *msg, ImageDraw *draw){//Œ³’Ê‚è
 
 	for (int i = 0; i < paras[size].idx; i++){
 		img[i].chx = img[i].fx; img[i].chy = img[i].fy;
 	}
 
-	return change(dx, msg, filter, draw);//change•Ô‚è’l‚ğ‚»‚Ì‚Ü‚Ü•Ô‚·
+	return change(dx, msg, draw);//change•Ô‚è’l‚ğ‚»‚Ì‚Ü‚Ü•Ô‚·
 }

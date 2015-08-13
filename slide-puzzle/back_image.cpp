@@ -17,14 +17,8 @@
 void back_image(Dx9Init *dx, int f){//f‘€ì—p
 
 	int r;    //ƒ‰ƒ“ƒ_ƒ€
-	// ’¸“_ƒf[ƒ^‚Ì\‘¢‘Ì(”wŒi)
-	struct MY_VERTEX2{
-		float x, y, z;
-		float rhw;
-		D3DCOLOR color;
-		float tu, tv;
-	};
-	static MY_VERTEX2 h[4];
+	// ’¸“_ƒf[ƒ^(”wŒi)
+	static Dx9Init::MY_VERTEX2 h[4];
 	static LPDIRECT3DTEXTURE9 pTexture;
 
 	srand((unsigned)time(NULL));
@@ -60,26 +54,14 @@ void back_image(Dx9Init *dx, int f){//f‘€ì—p
 		h[3].tv = 0.0f;
 
 		r = rand() % 5;
-		if (r == 0)D3DXCreateTextureFromFile(dx->pD3DDevice, "./dat/hk/hk0.dat", &pTexture);//”wŒi‰æ‘œ“Ç‚İ‚İ
-		if (r == 1)D3DXCreateTextureFromFile(dx->pD3DDevice, "./dat/hk/hk1.dat", &pTexture);
-		if (r == 2)D3DXCreateTextureFromFile(dx->pD3DDevice, "./dat/hk/hk2.dat", &pTexture);
-		if (r == 3)D3DXCreateTextureFromFile(dx->pD3DDevice, "./dat/hk/hk3.dat", &pTexture);
-		if (r == 4)D3DXCreateTextureFromFile(dx->pD3DDevice, "./dat/hk/hk4.dat", &pTexture);
+		dx->getbackimage(&pTexture, r);
 
 		return;
 	}
 
 	if (f == 1){
-		//ƒeƒNƒXƒ`ƒƒ[
-		dx->pD3DDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-		dx->pD3DDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-		dx->pD3DDevice->SetTexture(0, pTexture);
-		// ’¸“_ƒf[ƒ^‚Ì‚e‚u‚eƒtƒH[ƒ}ƒbƒg‚ğİ’è
-		dx->pD3DDevice->SetFVF(MY_VERTEX_FVF2);
-
-		// •`‰æ
-		dx->pD3DDevice->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, 2, &h, sizeof(MY_VERTEX2));
-		
+		//”wŒi•`‰æ
+		dx->d2backimage(pTexture, h);
 		return;
 	}
 

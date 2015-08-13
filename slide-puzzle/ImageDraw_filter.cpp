@@ -7,16 +7,8 @@
 #include "ImageRead.h"
 #include "ImageDraw.h"
 #include "Move.h"
-#include "Filter.h"
 
-Filter::Filter(){//コンストラクタ
-
-	block = (int**)malloc(sizeof(int*) * 400);//ブロック画像メモリ確保
-	for (int i = 0; i < 400; i++)block[i] = (int*)malloc(sizeof(int) * 400);
-
-}
-
-void Filter::filter(Move *move, ImageDraw *draw){
+void ImageDraw::filter(Move *move){
 
 	int i, j, x, y;//for
 	int bsize = move->paras[move->size].bsize;
@@ -154,12 +146,5 @@ void Filter::filter(Move *move, ImageDraw *draw){
 			}
 		}
 	}
-
-}
-
-Filter::~Filter(){//デストラクタ
-
-	for (int i = 0; i < 400; i++)free(block[i]);
-	free(block);
 
 }

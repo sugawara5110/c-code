@@ -12,9 +12,8 @@
 #include "ImageDraw.h"
 #include "Move.h"
 #include "Menu.h"
-#include "Filter.h"
 
-int Move::mov(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw, int *cnt, int flg, int autof){  //移動処理関数宣言 cnt移動禁止フラグ,flg移動方向,autof=1:auto_matic関数実行中
+int Move::mov(Dx9Init *dx, MSG *msg, ImageDraw *draw, int flg, int autof){  //移動処理関数宣言 cnt移動禁止フラグ,flg移動方向,autof=1:auto_matic関数実行中
 
 	int i;             //for
 	int k = -1;       //初期化
@@ -41,9 +40,6 @@ int Move::mov(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw, int *cnt, 
 	if (k >= 0){             //移動対象ブロック決定時のみ実行
 		if (tkf != 1){      //手数計算フラグ1以外に実行
 			mv = prs->move;//通常移動量初期化
-			if (draw->d.mcf == 1 || draw->d.mcf == 2){//動画ブロック時,移動量に更新
-				mv = prs->movem;                     //動画ブロック時移動量更新
-			}
 
 			if (autof == 1 && menu.mouse(dx, draw, 4, offset) == 1)mv = prs->bsize;//automatic関数実行時ハイスピード
 			if (autof == 1 && menu.mouse(dx, draw, 4, offset) == 2)return 2;      //automatic関数中止
@@ -63,8 +59,8 @@ int Move::mov(Dx9Init *dx, MSG *msg, Filter *filter, ImageDraw *draw, int *cnt, 
 			if (flg == 4)img[k].cy += mv;//座標値更新 ブロック上移動
 
 			if (ms == 0 && tkf == 0) {//猛スピードoff時,手数計算以外時描写
-				if (draw->drawing_img(dx, filter, this, offset[0], offset[1], 0, 0) == -1)return -1;//画像描画
-				if (autof == 0){ menu.mouse(dx, draw, 3, 0); if (draw->d.gfr == 9)menu.mouse(dx, draw, 6, 0); }
+				if (draw->draw_img(dx, this, offset[0], offset[1], 0) == -1)return -1;//画像描画
+				if (autof == 0){ menu.mouse(dx, draw, 3, 0); if (draw->getgfl() == 9)menu.mouse(dx, draw, 6, 0); }
 				else menu.mouse(dx, draw, 4, offset);//マウス座像描画のみ
 
 				dx->drawscreen();//描画

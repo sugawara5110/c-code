@@ -12,13 +12,26 @@
 
 unsigned __stdcall face_detect(void *th){
 
+	typedef struct{
+		REFTIME time1;          //動画の再生位置,再生時間
+		cv::VideoCapture cap; //USBカメラハンドル
+		cv::Mat mt_temp;             //検出画像格納
+		int th_f;                    //検出スレッド操作
+		volatile int th_st;         //検出スレッド進行状況 volatile コンパイラ最適化防止
+		volatile int lock, lock_t;//データ操作時ロック(排他制御)
+		int th_fin;               //スレッドreturnフラグ
+		char g_name[100];        //画像ファイル名格納
+		int gfl;                //画像モード 0:通常 1:モノクロ 2:モザイク 3:エッジ検出 4:エンボス処理 5:絵画風処理 6:顔面検出処理 7:顔面モザイク 8:ネガポジ 9:画像エンボス 10:顔すげ替え 11:スリットスキャン 12:ノイズ除去
+		int mcf;               //0:静止画選択中 1:動画選択中 2:カメラ選択中
+	}*drawdata_t;            //検出スレッド間でのデータ  
+
 	// 学習済み検出器の読み込み
 	cv::string cascadeName = "dat\\xml\\haarcascade_frontalface_alt2.xml";
 	cv::CascadeClassifier cascade;
 	if (!cascade.load(cascadeName))
 		return -1;
 
-	ImageRead::drawdata_t d_t = (ImageRead::drawdata_t)th;//本スレッドからデータ受け取り(drawdataとdrawdata_tは中身は同じ)
+	drawdata_t d_t = (drawdata_t)th;//本スレッドからデータ受け取り(drawdataとdrawdata_tは中身は同じ)
 	cv::vector<cv::Rect> faces;     //検出箇所
 	cv::VideoCapture video;        //検出スレッド動画再生ハンドル
 	cv::Mat ori, ori2;
@@ -47,7 +60,7 @@ unsigned __stdcall face_detect(void *th){
 				video.release();         //動画ファイル閉じ
 			}
 
-			while (d_t->th_f == 1 && (d_t->gfr == 6 || d_t->gfr == 7 || d_t->gfr == 10)){//検出処理スタートフラグ,  検出処理選択
+			while (d_t->th_f == 1 && (d_t->gfl == 6 || d_t->gfl == 7 || d_t->gfl == 10)){//検出処理スタートフラグ,  検出処理選択
 
 				switch (d_t->mcf){  //0:静止画選択中 1:動画選択中 2:カメラ選択中
 
@@ -115,7 +128,7 @@ unsigned __stdcall face_detect(void *th){
 				}
 
 				/*****************************************顔面モザイク,顔すげ替え処理開始***********************************************************/
-				if (d_t->gfr == 7 || d_t->gfr == 10){
+				if (d_t->gfl == 7 || d_t->gfl == 10){
 					//半分にリサイズ
 					cv::resize(ori, ori2, cv::Size(), 0.5, 0.5, cv::INTER_CUBIC);
 					dtrp = 0;//検出個数初期化
@@ -198,7 +211,7 @@ unsigned __stdcall face_detect(void *th){
 					dtrp = dti;//検出個数代入
 					//検出範囲,個数探索処理終了
 
-					if (d_t->gfr == 7){
+					if (d_t->gfl == 7){
 						//検出箇所モザイク処理開始(1ループ1箇所)
 						for (dti = 0; dti < dtrp; dti++){
 							//ifアクセス違反防止
@@ -224,9 +237,9 @@ unsigned __stdcall face_detect(void *th){
 						}//for dti
 						//検出箇所モザイク処理終了
 
-					}//if gfr == 7
+					}//if gfl == 7
 
-					if (d_t->gfr == 10){
+					if (d_t->gfl == 10){
 						//検出箇所すげ替え処理開始
 						for (dti = 0; dti < dtrp; dti++){
 
@@ -266,8 +279,8 @@ unsigned __stdcall face_detect(void *th){
 							}//ifアクセス違反
 						}//for dti
 						//検出箇所すげ替え処理終了
-					}//if gfr == 10
-				}//gfr==7,10処理終了
+					}//if gfl == 10
+				}//gfl==7,10処理終了
 				/*****************************************顔面モザイク,顔すげ替え処理終了***********************************************************/
 				d_t->lock_t = 1;                                //検索スレッドロック
 				if (d_t->lock == 1){ d_t->lock_t = 0; continue; }//本スレロック時,検索スレッドロック解除後continue
